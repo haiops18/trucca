@@ -3,6 +3,19 @@
 Định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/), phiên bản theo [SemVer](https://semver.org/).
 Ghi chú vận hành chi tiết hơn ở `history.md`.
 
+## [2.1.0] – 2026-11-12
+
+### Added
+- **Tra cứu cảnh báo cũ** trên trang cảnh báo: ô "Xem tại thời điểm" (+ chọn nhanh 1/6/24 giờ trước). Để trống =
+  cảnh báo đang diễn ra như cũ; chọn thời điểm = các cảnh báo đang diễn ra tại lúc đó kèm cột "Trạng thái"
+  (Đang diễn ra / Đã clear lúc …). Thời gian tồn, nhóm tuổi tính tới thời điểm đã chọn; bộ lọc, sắp xếp, gộp nhóm,
+  số đếm mức độ và Excel đều áp dụng.
+- API: tham số `at` cho `/api/alerts`, `/api/alerts/filters`, `/api/alerts/export.xlsx` (400 nếu sai định dạng
+  hoặc ở tương lai). Excel chế độ tra cứu thêm cột "Trạng thái", "Thời điểm clear".
+
+### Migration notes
+- Không có thay đổi DB; dữ liệu tra cứu lấy từ bảng `alert_occurrences` sẵn có.
+
 ## [2.0.0] – 2026-11-12
 
 Phiên bản major vì thay đổi hành vi mặc định (sắp xếp theo thời gian bắt đầu, cột Excel, URL module Quản trị,

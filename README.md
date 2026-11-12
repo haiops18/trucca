@@ -169,7 +169,7 @@ docker compose -p trucca --env-file /opt/trucca/trucca.env -f ./docker-compose.y
 ### Build và đẩy image lên registry nội bộ
 
 ```bash
-export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=2.0.0
+export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=2.1.0
 docker build \
   --build-arg APP_VERSION=$TRUCCA_VERSION \
   --build-arg BUILD_DATE=$(date -u +%FT%TZ) \
@@ -281,6 +281,24 @@ Excel có thêm 2 cột cuối: `Mức độ` (Critical / Warning / Khác) và `
 - **Xuất Excel** dùng đúng bộ lọc và thứ tự sắp xếp đang hiển thị trên web (không phân trang).
 - Báo cáo cuối ca (PDF): mục "Cảnh báo tồn cần bàn giao" có thêm thời gian bắt đầu, **vẫn sắp theo thời gian tồn
   giảm dần** như mẫu; bố cục và các mục khác giữ nguyên.
+
+### Tra cứu cảnh báo cũ (xem tại một thời điểm)
+
+Ô **"Xem tại thời điểm"** phía trên bộ lọc (có nút chọn nhanh 1 / 6 / 24 giờ trước):
+
+- **Để trống (mặc định):** hiển thị cảnh báo đang diễn ra, tự làm mới như bình thường.
+- **Chọn một thời điểm:** hiển thị các cảnh báo **đang diễn ra tại thời điểm đó** (bắt đầu trước hoặc đúng lúc đó và
+  chưa clear tại lúc đó), kèm cột **Trạng thái** hiện tại: *Đang diễn ra* (chưa clear tới nay) hoặc *Đã clear lúc …*
+  (kèm tổng thời gian tồn). "Thời gian tồn" và thanh nhóm tuổi tính **tới thời điểm đã chọn**.
+- Bộ lọc, tìm kiếm, sắp xếp, gộp nhóm, số đếm mức độ và **Xuất Excel** đều áp dụng cho thời điểm đã chọn
+  (file `canh-bao-tai-thoi-diem_<YYYYMMDD_HHmm>.xlsx`, thêm cột "Trạng thái" và "Thời điểm clear").
+- Thời điểm nhập theo giờ hệ thống (`timezone`), không chọn được thời điểm ở tương lai; chế độ này không tự làm mới.
+  Bấm **"Về hiện tại"** để quay lại. Link có tham số `at=` nên gửi được cho người khác.
+- Dữ liệu lấy từ lịch sử phát sinh (`alert_occurrences`), có từ lúc TrucCa bắt đầu thu thập và giữ `retention_days`
+  ngày (mặc định 90).
+
+API: `GET /api/alerts?at=2026-11-12T08:30:00` (giờ theo `timezone`, hoặc có múi giờ như `...Z`); cũng áp dụng cho
+`/api/alerts/filters` và `/api/alerts/export.xlsx`.
 
 API (dùng nội bộ cho giao diện): `GET /api/alerts?sort=starts_at|duration|alertname|summary|owner|application|severity&order=desc|asc`
 – mặc định `sort=starts_at&order=desc`.

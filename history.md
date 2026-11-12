@@ -1,5 +1,10 @@
 # Lịch sử thay đổi
 
+## 2.1.0 – 2026-11-12
+
+- Tra cứu cảnh báo cũ: chọn thời điểm trên trang cảnh báo để xem các cảnh báo đang diễn ra lúc đó kèm trạng thái
+  hiện tại (Đang diễn ra / Đã clear lúc …); xuất Excel theo thời điểm.
+
 ## 2.0.0 – 2026-11-12
 
 Chi tiết xem `CHANGELOG.md`.

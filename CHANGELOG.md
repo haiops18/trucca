@@ -3,7 +3,10 @@
 Định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/), phiên bản theo [SemVer](https://semver.org/).
 Ghi chú vận hành chi tiết hơn ở `history.md`.
 
-## [1.1.0] – 2026-11-12
+## [2.0.0] – 2026-11-12
+
+Phiên bản major vì thay đổi hành vi mặc định (sắp xếp theo thời gian bắt đầu, cột Excel, URL module Quản trị,
+địa chỉ trang đổi mật khẩu). URL và API cũ vẫn được giữ tương thích (redirect / deprecated).
 
 ### Added
 - Cột **"Thời gian bắt đầu"** (`startsAt`, `dd/MM/yyyy HH:mm:ss` theo `timezone`) ngay trước "Thời gian tồn" trên

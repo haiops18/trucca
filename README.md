@@ -123,7 +123,7 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 ### Build và đẩy image lên registry nội bộ
 
 ```bash
-export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=1.1.0
+export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=2.0.0
 docker build \
   --build-arg APP_VERSION=$TRUCCA_VERSION \
   --build-arg BUILD_DATE=$(date -u +%FT%TZ) \

@@ -10,8 +10,8 @@
 #
 # Script sẽ:
 #   1. Kiểm tra docker / docker compose.
-#   2. Nạp image: dùng image đã có, hoặc `docker load` file trucca-image-<version>.tar.gz
-#      (cạnh script, trong dist/, hoặc chỉ định bằng -i), hoặc tải từ GitHub Release bằng `gh`.
+#   2. Nạp image TrucCa + PostgreSQL: dùng image đã có, hoặc `docker load` file trucca-image-<version>.tar.gz /
+#      postgres-<tag>.tar.gz (cạnh script, trong dist/, hoặc -i), hoặc tự tải từ GitHub Release (gh / curl).
 #   3. Tạo thư mục cài đặt: <dir>/config (config.yml), <dir>/data (PostgreSQL + báo cáo PDF), <dir>/trucca.env.
 #   4. Ghi địa chỉ Alertmanager vào config.yml, sinh mật khẩu PostgreSQL ngẫu nhiên (lần đầu).
 #   5. Chạy docker compose và chờ tới khi các container healthy.
@@ -167,42 +167,71 @@ echo
 confirm "Tiếp tục cài đặt?" || die "đã huỷ"
 
 # ---------------------------------------------------------------- 3. nạp image
-info "Nạp image $IMAGE_REPO:$VERSION"
+# Mỗi image tìm theo thứ tự: đã có trên máy -> file cạnh install.sh / dist/ / thư mục hiện tại
+# -> tải từ GitHub Release v<version> (gh, hoặc curl vì repo public) -> docker pull (chỉ PostgreSQL, cần internet).
+DIST_DIR="$REPO_DIR/dist"
+RELEASE_URL="https://github.com/$GITHUB_REPO/releases/download/v$VERSION"
+
 load_image_file() {
   local f="$1"
   if [[ -f "$f.sha256" ]] && command -v sha256sum >/dev/null 2>&1; then
     (cd "$(dirname "$f")" && sha256sum -c --status "$(basename "$f").sha256") \
-      || die "file image bị hỏng (sai SHA-256): $f – hãy tải lại"
-    ok "SHA-256 khớp"
+      || die "file image bị hỏng (sai SHA-256): $f – xoá file và tải lại"
+    ok "SHA-256 khớp: $(basename "$f")"
   fi
   docker load -i "$f" | sed 's/^/    /'
 }
+
+download_asset() {  # download_asset TÊN_FILE -> 0 nếu tải được vào $DIST_DIR
+  local name="$1"
+  mkdir -p "$DIST_DIR"
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh release download "v$VERSION" -R "$GITHUB_REPO" -D "$DIST_DIR" --clobber -p "$name" -p "$name.sha256" \
+      >/dev/null 2>&1 && return 0
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 --progress-bar -o "$DIST_DIR/$name.part" "$RELEASE_URL/$name" \
+      && mv "$DIST_DIR/$name.part" "$DIST_DIR/$name" \
+      && curl -fsSL --retry 3 -o "$DIST_DIR/$name.sha256" "$RELEASE_URL/$name.sha256" \
+      && return 0
+    rm -f "$DIST_DIR/$name.part"
+  fi
+  return 1
+}
+
+ensure_image() {  # ensure_image IMAGE:TAG TÊN_FILE CHO_PHÉP_PULL(0/1)
+  local ref="$1" name="$2" allow_pull="$3" f found=""
+  if docker image inspect "$ref" >/dev/null 2>&1; then ok "$ref đã có sẵn trên máy"; return; fi
+  for f in "$REPO_DIR/$name" "$DIST_DIR/$name" "$(pwd)/$name"; do
+    [[ -f "$f" ]] && { found="$f"; break; }
+  done
+  if [[ -z "$found" ]]; then
+    info "Tải $name từ GitHub Release v$VERSION"
+    download_asset "$name" && found="$DIST_DIR/$name"
+  fi
+  if [[ -n "$found" ]]; then
+    load_image_file "$found"
+  elif [[ "$allow_pull" == 1 ]]; then
+    info "docker pull $ref"
+    docker pull "$ref" || true
+  fi
+  docker image inspect "$ref" >/dev/null 2>&1 || die "không nạp được image $ref.
+       Tải $name (và $name.sha256) tại https://github.com/$GITHUB_REPO/releases/tag/v$VERSION,
+       đặt cạnh install.sh rồi chạy lại."
+  ok "$ref sẵn sàng"
+}
+
+PG_IMAGE="$(awk '/^  postgres:/{f=1} f && /^    image:/{print $2; exit}' "$COMPOSE_FILE")"
+[[ -n "$PG_IMAGE" ]] || die "không đọc được image PostgreSQL trong docker-compose.yml"
+PG_FILE="$(printf '%s' "$PG_IMAGE" | tr ':/' '--').tar.gz"     # postgres:16.4-alpine -> postgres-16.4-alpine.tar.gz
+
+info "Nạp image"
 if [[ -n "$IMAGE_FILE" ]]; then
   [[ -f "$IMAGE_FILE" ]] || die "không thấy file image: $IMAGE_FILE"
   load_image_file "$IMAGE_FILE"
-elif docker image inspect "$IMAGE_REPO:$VERSION" >/dev/null 2>&1; then
-  ok "image đã có sẵn trên máy"
-else
-  found=""
-  for f in "$REPO_DIR/trucca-image-$VERSION.tar.gz" "$REPO_DIR/dist/trucca-image-$VERSION.tar.gz" \
-           "$(pwd)/trucca-image-$VERSION.tar.gz"; do
-    [[ -f "$f" ]] && { found="$f"; break; }
-  done
-  if [[ -z "$found" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    info "Tải image từ GitHub Release v$VERSION ($GITHUB_REPO)"
-    mkdir -p "$REPO_DIR/dist"
-    gh release download "v$VERSION" -R "$GITHUB_REPO" -D "$REPO_DIR/dist" --clobber \
-      -p "trucca-image-$VERSION.tar.gz" -p "trucca-image-$VERSION.tar.gz.sha256" \
-      && found="$REPO_DIR/dist/trucca-image-$VERSION.tar.gz"
-  fi
-  [[ -n "$found" ]] || die "không tìm thấy image. Tải file trucca-image-$VERSION.tar.gz ở trang Releases của repo
-       (https://github.com/$GITHUB_REPO/releases/tag/v$VERSION), đặt cạnh install.sh rồi chạy lại,
-       hoặc chỉ định: ./install.sh -i /đường/dẫn/trucca-image-$VERSION.tar.gz"
-  load_image_file "$found"
 fi
-docker image inspect "$IMAGE_REPO:$VERSION" >/dev/null 2>&1 \
-  || die "file image không chứa $IMAGE_REPO:$VERSION (kiểm tra lại version của file)"
-ok "image sẵn sàng"
+ensure_image "$IMAGE_REPO:$VERSION" "trucca-image-$VERSION.tar.gz" 0
+ensure_image "$PG_IMAGE" "$PG_FILE" 1
 
 # ---------------------------------------------------------------- 4. thư mục + cấu hình
 info "Chuẩn bị thư mục $BASE_DIR"

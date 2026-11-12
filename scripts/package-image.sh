@@ -2,7 +2,8 @@
 # Đóng gói image TrucCa thành file để phát hành (GitHub Release) và cài bằng install.sh.
 #   ./scripts/package-image.sh            # dùng TRUCCA_VERSION trong .env.example
 #   ./scripts/package-image.sh 2.0.0
-# Kết quả: dist/trucca-image-<version>.tar.gz và .sha256
+# Kết quả: dist/trucca-image-<version>.tar.gz, dist/postgres-<tag>.tar.gz (image PostgreSQL trong
+# docker-compose.yml, để cài trên máy không có internet) và các file .sha256
 set -Eeuo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-$(grep -E '^TRUCCA_VERSION=' "$REPO_DIR/.env.example" | cut -d= -f2)}"
@@ -17,3 +18,12 @@ mv "$OUT.tmp" "$OUT"
 (cd "$REPO_DIR/dist" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256")
 ls -lh "$OUT"
 cat "$OUT.sha256"
+
+PG_IMAGE="$(awk '/^  postgres:/{f=1} f && /^    image:/{print $2; exit}' "$REPO_DIR/docker-compose.yml")"
+PG_OUT="$REPO_DIR/dist/$(printf '%s' "$PG_IMAGE" | tr ':/' '--').tar.gz"
+docker image inspect "$PG_IMAGE" >/dev/null 2>&1 || docker pull "$PG_IMAGE"
+echo "Đóng gói $PG_IMAGE -> $PG_OUT"
+docker save "$PG_IMAGE" | gzip -6 > "$PG_OUT.tmp"
+mv "$PG_OUT.tmp" "$PG_OUT"
+(cd "$REPO_DIR/dist" && sha256sum "$(basename "$PG_OUT")" > "$(basename "$PG_OUT").sha256")
+ls -lh "$PG_OUT"

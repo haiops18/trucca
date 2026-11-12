@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.engine import Engine
 
 from .db import alerts
+from .severity import LABELS as SEVERITY_LABELS
+from .severity import LEVELS as SEVERITY_LEVELS
+from .severity import RANK as SEVERITY_RANK
+from .severity import clean, parse_level
 from .timeutil import duration_seconds, format_duration
 
-SortKey = Literal["duration", "alertname", "summary", "owner", "application", "severity"]
-SORT_KEYS: tuple[str, ...] = ("duration", "alertname", "summary", "owner", "application", "severity")
+SortKey = Literal["starts_at", "duration", "alertname", "summary", "owner", "application", "severity"]
+SORT_KEYS: tuple[str, ...] = ("starts_at", "duration", "alertname", "summary", "owner", "application", "severity")
+# Mặc định: cảnh báo bắt đầu MỚI NHẤT ở trên cùng
+DEFAULT_SORT, DEFAULT_ORDER = "starts_at", "desc"
+DISPLAY_TIME_FORMAT = "%d/%m/%Y %H:%M:%S"
+_DEFAULT_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 @dataclass
@@ -23,11 +32,11 @@ class AlertFilter:
     owner: str = ""
     alertname: str = ""
     severity: str = ""
-    sort: str = "duration"
-    order: str = "desc"
+    sort: str = DEFAULT_SORT
+    order: str = DEFAULT_ORDER
 
     def normalized(self) -> AlertFilter:
-        sort = self.sort if self.sort in SORT_KEYS else "duration"
+        sort = self.sort if self.sort in SORT_KEYS else DEFAULT_SORT
         order = "asc" if self.order == "asc" else "desc"
         return AlertFilter(
             self.q.strip()[:200], self.application.strip(), self.owner.strip(),
@@ -46,19 +55,29 @@ MISSING = "__missing__"
 def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
     f = f.normalized()
     stmt = select(
-        alerts.c.fingerprint, alerts.c.alertname, alerts.c.summary, alerts.c.severity, alerts.c.owner,
-        alerts.c.application, alerts.c.instance, alerts.c.starts_at, alerts.c.am_state,
+        alerts.c.fingerprint, alerts.c.alertname, alerts.c.summary, alerts.c.severity,
+        alerts.c.severity_normalized, alerts.c.owner, alerts.c.application, alerts.c.instance,
+        alerts.c.starts_at, alerts.c.am_state,
     ).where(alerts.c.status == "active")
     for col, val in (
         (alerts.c.application, f.application),
         (alerts.c.owner, f.owner),
         (alerts.c.alertname, f.alertname),
-        (alerts.c.severity, f.severity),
     ):
         if val == MISSING:
             stmt = stmt.where(col.is_(None))
         elif val:
             stmt = stmt.where(col == val)
+    if f.severity:
+        level = parse_level(f.severity)
+        if level:
+            # severity=warning khớp Warning / WARNING / warning ... (đã chuẩn hoá khi thu thập)
+            stmt = stmt.where(alerts.c.severity_normalized == level)
+        elif f.severity == MISSING:
+            stmt = stmt.where(alerts.c.severity.is_(None))
+        else:
+            # Tương thích ngược: lọc theo giá trị gốc, không phân biệt hoa thường
+            stmt = stmt.where(func.lower(func.btrim(alerts.c.severity)) == clean(f.severity))
     if f.q:
         pat = f"%{_escape_like(f.q)}%"
         stmt = stmt.where(
@@ -74,6 +93,12 @@ def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
     if f.sort == "duration":
         # thời gian tồn giảm dần <=> starts_at tăng dần
         primary = alerts.c.starts_at.asc() if f.order == "desc" else alerts.c.starts_at.desc()
+    elif f.sort == "starts_at":
+        primary = alerts.c.starts_at.desc() if f.order == "desc" else alerts.c.starts_at.asc()
+    elif f.sort == "severity":
+        rank = case(*[(alerts.c.severity_normalized == lv, literal(r)) for lv, r in SEVERITY_RANK.items()],
+                    else_=literal(0))
+        primary = rank.desc() if f.order == "desc" else rank.asc()
     else:
         col = alerts.c[f.sort]
         primary = (col.asc() if f.order == "asc" else col.desc()).nulls_last()
@@ -82,7 +107,19 @@ def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
         return [dict(r._mapping) for r in conn.execute(stmt)]
 
 
-def present_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str) -> list[dict[str, Any]]:
+def format_start(ts: datetime, tz: tzinfo | None) -> str:
+    """Thời gian bắt đầu hiển thị: dd/MM/yyyy HH:mm:ss theo timezone cấu hình."""
+    return ts.astimezone(tz or _DEFAULT_TZ).strftime(DISPLAY_TIME_FORMAT)
+
+
+def _severity_fields(level: str, raw: str) -> dict[str, str]:
+    level = level if level in SEVERITY_LEVELS else "other"
+    return {"severity": raw, "severity_level": level, "severity_label": SEVERITY_LABELS[level]}
+
+
+def present_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str,
+                 tz: tzinfo | None = None) -> list[dict[str, Any]]:
+    """STT đánh theo đúng thứ tự hiển thị (sau lọc + sắp xếp)."""
     out = []
     for i, r in enumerate(rows, 1):
         secs = duration_seconds(r["starts_at"], None, now)
@@ -92,13 +129,15 @@ def present_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str) -
                 "fingerprint": r["fingerprint"],
                 "alertname": r["alertname"],
                 "summary": r["summary"] or "",
+                "starts_at_display": format_start(r["starts_at"], tz),
                 "duration": format_duration(secs),
                 "duration_hours": round(secs / 3600, 2),
                 "owner": r["owner"] or missing_text,
                 "application": r["application"] or missing_text,
-                "severity": r["severity"] or "",
+                **_severity_fields(r.get("severity_normalized") or "other", r["severity"] or ""),
                 "instance": r["instance"] or "",
                 "starts_at": r["starts_at"].isoformat(),
+                "starts_at_dt": r["starts_at"],
                 "silenced": r["am_state"] == "suppressed",
                 "count": 1,
             }
@@ -117,36 +156,65 @@ def group_summary(summaries: list[str], instances: list[str], count: int) -> str
     return f"({count}) {uniq[0]} …" if uniq else ""
 
 
-def group_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str) -> list[dict[str, Any]]:
-    """Gộp các cảnh báo cùng alertname + application. Giữ thứ tự của dòng đầu tiên mỗi nhóm."""
+def group_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str, tz: tzinfo | None = None,
+               sort: str = DEFAULT_SORT, order: str = DEFAULT_ORDER) -> list[dict[str, Any]]:
+    """Gộp các cảnh báo cùng alertname + application.
+
+    Thời gian bắt đầu của nhóm = cảnh báo bắt đầu sớm nhất (khớp với "Thời gian tồn" của nhóm). Khi sắp xếp theo
+    thời gian bắt đầu / thời gian tồn, các nhóm được sắp lại theo giá trị này; các cách sắp xếp khác giữ thứ tự
+    dòng đầu tiên của mỗi nhóm. STT đánh lại theo thứ tự hiển thị cuối cùng.
+    """
     groups: dict[tuple[str, str | None], list[dict[str, Any]]] = {}
     for r in rows:
         groups.setdefault((r["alertname"], r["application"]), []).append(r)
     out = []
-    for i, ((alertname, app), members) in enumerate(groups.items(), 1):
+    for (alertname, app), members in groups.items():
         oldest = min(m["starts_at"] for m in members)
         secs = duration_seconds(oldest, None, now)
         owners = sorted({m["owner"] for m in members if m["owner"]})
         sev = sorted({m["severity"] for m in members if m["severity"]})
+        level = max((m.get("severity_normalized") or "other" for m in members),
+                    key=lambda lv: SEVERITY_RANK.get(lv, 0))
         out.append(
             {
-                "stt": i,
+                "stt": 0,
                 "fingerprint": members[0]["fingerprint"],
                 "alertname": alertname,
                 "summary": group_summary([m["summary"] for m in members], [m["instance"] or "" for m in members],
                                          len(members)),
+                "starts_at_display": format_start(oldest, tz),
                 "duration": format_duration(secs),
                 "duration_hours": round(secs / 3600, 2),
                 "owner": ", ".join(owners) if owners else missing_text,
                 "application": app or missing_text,
-                "severity": ", ".join(sev),
+                **_severity_fields(level, ", ".join(sev)),
                 "instance": "",
                 "starts_at": oldest.isoformat(),
+                "starts_at_dt": oldest,
                 "silenced": all(m["am_state"] == "suppressed" for m in members),
                 "count": len(members),
             }
         )
+    if sort in ("starts_at", "duration"):
+        newest_first = (sort == "starts_at") == (order == "desc")
+        out.sort(key=lambda g: g["starts_at_dt"], reverse=newest_first)
+    for i, g in enumerate(out, 1):
+        g["stt"] = i
     return out
+
+
+def severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Số cảnh báo theo nhóm mức độ (trên dòng thô, trước khi gộp)."""
+    counts = dict.fromkeys(SEVERITY_LEVELS, 0)
+    for r in rows:
+        lv = r.get("severity_normalized") or "other"
+        counts[lv if lv in counts else "other"] += 1
+    return counts
+
+
+def strip_internal(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Bỏ các trường nội bộ (datetime) trước khi trả JSON."""
+    return [{k: v for k, v in r.items() if k != "starts_at_dt"} for r in rows]
 
 
 def age_edges(handover_hours: float) -> list[float]:
@@ -200,7 +268,11 @@ def filter_age(rows: list[dict[str, Any]], now: datetime, min_hours: float | Non
 def filter_options(engine: Engine) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     with engine.connect() as conn:
-        for name in ("application", "owner", "alertname", "severity"):
+        present = {r[0] for r in conn.execute(
+            select(alerts.c.severity_normalized).where(alerts.c.status == "active").distinct())}
+        # Mức độ: luôn là các nhóm chuẩn (critical, warning, other) theo thứ tự cố định
+        out["severity"] = [lv for lv in SEVERITY_LEVELS if lv in present]
+        for name in ("application", "owner", "alertname"):
             col = alerts.c[name]
             stmt = (
                 select(col, func.count())

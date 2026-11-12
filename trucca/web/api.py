@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from .. import __version__
 from ..alerts_query import (
+    DEFAULT_ORDER,
+    DEFAULT_SORT,
     AlertFilter,
     age_buckets,
     fetch_active,
@@ -21,6 +24,8 @@ from ..alerts_query import (
     filter_options,
     group_rows,
     present_rows,
+    severity_counts,
+    strip_internal,
 )
 from ..auth import service as auth
 from ..auth.service import AuthError, CurrentUser
@@ -107,15 +112,28 @@ def _alert_filter(q: str, application: str, owner: str, alertname: str, severity
 
 def _rows(request: Request, f: AlertFilter, group: bool, min_hours: float | None, max_hours: float | None,
           with_buckets: bool = False) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Trả về (dòng hiển thị, nhóm tuổi). Nhóm tuổi tính trên tập đã lọc, TRƯỚC khi lọc theo tuổi."""
+    """Trả về (dòng hiển thị, nhóm tuổi). Nhóm tuổi tính trên tập đã lọc, TRƯỚC khi lọc theo tuổi.
+
+    Dùng chung cho bảng web và Excel, nên Excel xuất đúng thứ tự (sắp xếp/lọc) đang hiển thị trên web.
+    """
     st = state(request)
     now = utcnow()
+    f = f.normalized()
     raw = fetch_active(st.engine, f)
     buckets = age_buckets(raw, now, st.config.report.handover_threshold_hours) if with_buckets else []
     raw = filter_age(raw, now, min_hours, max_hours)
     missing = st.config.display.missing_label_text
-    rows = group_rows(raw, now, missing) if group else present_rows(raw, now, missing)
+    tz = st.config.tz
+    rows = (group_rows(raw, now, missing, tz, f.sort, f.order) if group
+            else present_rows(raw, now, missing, tz))
     return rows, buckets
+
+
+def _severity_counts(request: Request, f: AlertFilter, min_hours: float | None,
+                     max_hours: float | None) -> dict[str, int]:
+    """Đếm theo mức độ với các bộ lọc khác đang áp dụng (bỏ qua chính bộ lọc mức độ)."""
+    raw = fetch_active(state(request).engine, replace(f.normalized(), severity=""))
+    return severity_counts(filter_age(raw, utcnow(), min_hours, max_hours))
 
 
 @router.get("/api/alerts")
@@ -126,8 +144,8 @@ def list_alerts(
     owner: str = Query("", max_length=500),
     alertname: str = Query("", max_length=500),
     severity: str = Query("", max_length=100),
-    sort: str = "duration",
-    order: str = "desc",
+    sort: str = DEFAULT_SORT,
+    order: str = DEFAULT_ORDER,
     group: bool = False,
     min_hours: float | None = Query(None, ge=0),
     max_hours: float | None = Query(None, gt=0),
@@ -136,14 +154,17 @@ def list_alerts(
     _: CurrentUser = Depends(api_user_ready),
 ) -> dict[str, Any]:
     st = state(request)
-    rows, buckets = _rows(request, _alert_filter(q, application, owner, alertname, severity, sort, order), group,
-                          min_hours, max_hours, with_buckets=True)
+    f = _alert_filter(q, application, owner, alertname, severity, sort, order)
+    rows, buckets = _rows(request, f, group, min_hours, max_hours, with_buckets=True)
     total = len(rows)
     pages = max(1, math.ceil(total / page_size))
     page = min(page, pages)
-    items = rows[(page - 1) * page_size: page * page_size]
+    items = strip_internal(rows[(page - 1) * page_size: page * page_size])
     return {
         "items": items,
+        "sort": f.normalized().sort,
+        "order": f.normalized().order,
+        "severity_counts": _severity_counts(request, f, min_hours, max_hours),
         "total": total,
         "total_alerts": sum(r["count"] for r in rows),
         "page": page,
@@ -169,8 +190,8 @@ def export_alerts(
     owner: str = Query("", max_length=500),
     alertname: str = Query("", max_length=500),
     severity: str = Query("", max_length=100),
-    sort: str = "duration",
-    order: str = "desc",
+    sort: str = DEFAULT_SORT,
+    order: str = DEFAULT_ORDER,
     group: bool = False,
     min_hours: float | None = Query(None, ge=0),
     max_hours: float | None = Query(None, gt=0),
@@ -180,7 +201,7 @@ def export_alerts(
     f = _alert_filter(q, application, owner, alertname, severity, sort, order)
     rows, _ = _rows(request, f, group, min_hours, max_hours)
     now = utcnow()
-    content = build_alerts_xlsx(rows, now)
+    content = build_alerts_xlsx(rows, now, tz=st.config.tz)
     local = now.astimezone(st.config.tz)
     filename = f"canh-bao-dang-dien-ra_{local:%Y%m%d_%H%M}.xlsx"
     log.info("alerts_exported", extra={"user": user.username, "rows": len(rows)})

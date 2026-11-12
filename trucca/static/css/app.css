@@ -202,7 +202,18 @@ table.alerts .dur { font-weight: 700; white-space: nowrap; }
 table.alerts tr.lvl-2 .dur, table.alerts tr.lvl-3 .dur, table.alerts tr.lvl-4 .dur { color: var(--amber); }
 table.alerts .missing { color: var(--muted); font-style: italic; }
 .tag { display: inline-block; font-size: .6875rem; font-weight: 600; padding: 0 6px; border-radius: 4px; background: var(--line-2); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
-.sev { font-size: .75rem; color: var(--muted); }
+/* Mức độ (đã chuẩn hoá): critical | warning | other */
+.sev { display: inline-block; font-size: .6875rem; font-weight: 700; padding: 1px 7px; border-radius: 99px; margin-top: 3px;
+  border: 1px solid transparent; letter-spacing: .01em; }
+.sev-critical { background: var(--red-soft); color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, transparent); }
+.sev-warning { background: var(--warn-soft); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 35%, transparent); }
+.sev-other { background: var(--line-2); color: var(--muted); }
+table.alerts .start { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.sevcounts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sevcount { font: inherit; font-size: .8125rem; cursor: pointer; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); }
+.sevcount b { font-weight: 800; }
+.sevcount[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 1px; }
+.sevcount:hover { filter: brightness(.97); }
 .skeleton td div { height: 12px; border-radius: 4px; background: linear-gradient(90deg, var(--line-2), var(--line), var(--line-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .empty { text-align: center; padding: 48px 16px; color: var(--muted); }

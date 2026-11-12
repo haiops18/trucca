@@ -91,8 +91,12 @@ def compare(today: int | None, yesterday: int | None) -> dict[str, Any]:
 
 
 def handover(
-    occs: list[Occ], ref: datetime, threshold_hours: float, missing_text: str, limit: int
+    occs: list[Occ], ref: datetime, threshold_hours: float, missing_text: str, limit: int,
+    tz: ZoneInfo | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
+    """Nhóm cảnh báo tồn quá ngưỡng, sắp xếp theo thời gian tồn GIẢM DẦN (giữ như mẫu).
+
+    "Bắt đầu" của nhóm = cảnh báo bắt đầu sớm nhất (khớp với thời gian tồn hiển thị)."""
     threshold = timedelta(hours=threshold_hours)
     long_running = [o for o in active_at(occs, ref) if ref - o.starts_at > threshold]
     groups: dict[tuple[str, str], list[Occ]] = {}
@@ -101,6 +105,7 @@ def handover(
     items = []
     for (app, alertname), members in groups.items():
         secs = max((ref - m.starts_at).total_seconds() for m in members)
+        first = min(m.starts_at for m in members)
         summaries = [m.summary or m.alertname for m in members]
         items.append(
             {
@@ -110,6 +115,9 @@ def handover(
                 "count": len(members),
                 "duration_seconds": secs,
                 "duration": format_duration(secs),
+                "starts_at": first.isoformat(),
+                "start_label": first.astimezone(tz).strftime("%d/%m/%Y %H:%M:%S") if tz else
+                first.strftime("%d/%m/%Y %H:%M:%S"),
             }
         )
     items.sort(key=lambda x: (-x["duration_seconds"], x["application"], x["alertname"]))
@@ -163,7 +171,7 @@ def build_report(
     new_occs = started_in(occs, window.start, window.end)
     total_new = len(new_occs)
     ref = window.end if finished else min(now, window.end)
-    handover_items, handover_more = handover(occs, ref, handover_threshold_hours, missing_text, handover_limit)
+    handover_items, handover_more = handover(occs, ref, handover_threshold_hours, missing_text, handover_limit, tz)
 
     start_local = window.start.astimezone(tz)
     end_local = window.end.astimezone(tz)

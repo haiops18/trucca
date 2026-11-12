@@ -6,11 +6,18 @@
   const LABELS = { q: "Tìm", application: "Hệ thống", owner: "Người xử lý", alertname: "Tên cảnh báo", severity: "Mức độ" };
   const MISSING = "__missing__";
   const MISSING_TEXT = "(chưa gán)";
+  // Mức độ đã chuẩn hoá phía server (không phân biệt hoa thường): critical | warning | other
+  const SEV_LABELS = { critical: "Critical", warning: "Warning", other: "Khác" };
+  const SEV_ORDER = ["critical", "warning", "other"];
+  // Mặc định: cảnh báo bắt đầu mới nhất ở trên cùng
+  const DEFAULT_SORT = "starts_at", DEFAULT_ORDER = "desc";
+  const DESC_FIRST = new Set(["starts_at", "duration", "severity"]);
+  const COLS = 7;
 
   const state = {
     q: "", application: "", owner: "", alertname: "", severity: "",
     min_hours: null, max_hours: null, group: false,
-    sort: "duration", order: "desc", page: 1, page_size: 50,
+    sort: DEFAULT_SORT, order: DEFAULT_ORDER, page: 1, page_size: 50,
   };
   let refreshSeconds = 30;
   let timer = null;
@@ -66,18 +73,40 @@
       const lvl = levelFor(r.duration_hours);
       const multi = r.count > 1 ? '<span class="multi" title="' + r.count + ' cảnh báo được gộp">×' + r.count + "</span>" : "";
       const silenced = r.silenced ? '<span class="tag" title="Đang bị silence/inhibit trong Alertmanager">silenced</span>' : "";
-      const sev = r.severity ? '<div class="sev">' + TC.esc(r.severity) + "</div>" : "";
+      const sev = sevBadge(r);
       return '<tr class="lvl-' + lvl + '">' +
         "<td>" + r.stt + "</td>" +
         '<td class="name">' + TC.esc(r.alertname) + multi + silenced + sev + "</td>" +
         '<td class="sum">' + TC.esc(r.summary) + "</td>" +
-        '<td class="dur" data-label="Thời gian tồn" title="Bắt đầu ' + TC.esc(TC.fmtDateTime(r.starts_at)) + '">' + TC.esc(r.duration) + "</td>" +
+        '<td class="start" data-label="Bắt đầu"><time datetime="' + TC.esc(r.starts_at) + '">' + TC.esc(r.starts_at_display) + "</time></td>" +
+        '<td class="dur" data-label="Thời gian tồn">' + TC.esc(r.duration) + "</td>" +
         cell(r.owner, "", "Người xử lý") + cell(r.application, "", "Hệ thống") + "</tr>";
     }).join("");
   }
 
+  function sevLabel(v) { return SEV_LABELS[v] || v; }
+
+  function sevBadge(r) {
+    const lvl = r.severity_level || "other";
+    const raw = r.severity ? "Giá trị gốc: " + r.severity : "Không có label mức độ";
+    return '<div><span class="sev sev-' + lvl + '" title="' + TC.esc(raw) + '">' + TC.esc(r.severity_label || sevLabel(lvl)) + "</span></div>";
+  }
+
+  function renderSevCounts(counts) {
+    const box = $("sev-counts");
+    if (!counts) { box.innerHTML = ""; return; }
+    const cur = SEV_ORDER.includes(String(state.severity).toLowerCase()) ? String(state.severity).toLowerCase() : "";
+    box.innerHTML = SEV_ORDER.map((lv) => {
+      const n = counts[lv] || 0;
+      const pressed = cur === lv;
+      return '<button type="button" class="sevcount sev-' + lv + '" data-sev="' + lv + '" aria-pressed="' + pressed + '"' +
+        ' aria-label="' + sevLabel(lv) + ": " + n + ' cảnh báo' + (pressed ? ", đang lọc – bấm để bỏ" : ", bấm để lọc") + '">' +
+        "<b>" + TC.fmtNum(n) + "</b> " + sevLabel(lv) + "</button>";
+    }).join("");
+  }
+
   function renderSkeleton() {
-    const row = "<tr class=\"skeleton\">" + "<td><div></div></td>".repeat(6) + "</tr>";
+    const row = "<tr class=\"skeleton\">" + "<td><div></div></td>".repeat(COLS) + "</tr>";
     $("rows").innerHTML = row.repeat(8);
   }
 
@@ -137,7 +166,7 @@
     const chips = [];
     FILTER_KEYS.forEach((k) => {
       if (!state[k]) return;
-      const v = state[k] === MISSING ? MISSING_TEXT : state[k];
+      const v = state[k] === MISSING ? MISSING_TEXT : (k === "severity" ? sevLabel(state[k].toLowerCase()) : state[k]);
       chips.push('<span class="chip">' + LABELS[k] + ": " + TC.esc(v) + '<button type="button" data-k="' + k + '" aria-label="Bỏ lọc ' + LABELS[k] + '">×</button></span>');
     });
     if (state.min_hours != null || state.max_hours != null) {
@@ -155,14 +184,15 @@
     });
   }
 
-  function fillSelect(sel, values, current) {
+  function fillSelect(sel, values, current, labelOf) {
+    const label = labelOf || ((v) => v);
     const opts = ['<option value="">Tất cả</option>'];
     const seen = new Set();
     values.forEach((v) => {
       seen.add(v);
-      opts.push('<option value="' + TC.esc(v) + '">' + TC.esc(v === MISSING ? MISSING_TEXT : v) + "</option>");
+      opts.push('<option value="' + TC.esc(v) + '">' + TC.esc(v === MISSING ? MISSING_TEXT : label(v)) + "</option>");
     });
-    if (current && !seen.has(current)) opts.push('<option value="' + TC.esc(current) + '">' + TC.esc(current) + " (hiện không có)</option>");
+    if (current && !seen.has(current)) opts.push('<option value="' + TC.esc(current) + '">' + TC.esc(label(current)) + " (hiện không có)</option>");
     sel.innerHTML = opts.join("");
     sel.value = current || "";
   }
@@ -171,7 +201,8 @@
   async function loadFilters() {
     try {
       const f = await TC.api("/api/alerts/filters");
-      ["application", "owner", "alertname", "severity"].forEach((k) => fillSelect($("f-" + k), f[k] || [], state[k]));
+      ["application", "owner", "alertname"].forEach((k) => fillSelect($("f-" + k), f[k] || [], state[k]));
+      fillSelect($("f-severity"), SEV_ORDER, state.severity ? state.severity.toLowerCase() : "", sevLabel);
     } catch (e) { /* lỗi đã hiện ở banner chính khi load() */ }
   }
 
@@ -191,7 +222,9 @@
       $("total-count").textContent = TC.fmtNum(data.total_alerts);
       $("updated-at").textContent = TC.fmtTime(data.generated_at);
       $("updated-at").setAttribute("datetime", data.generated_at);
+      if (data.sort) { state.sort = data.sort; state.order = data.order; renderSortHeaders(); }
       renderAgeBar(data);
+      renderSevCounts(data.severity_counts);
       renderRows(data.items);
       renderEmpty(data);
       renderChips();
@@ -250,7 +283,7 @@
       btn.addEventListener("click", () => {
         const key = btn.parentElement.dataset.sort;
         if (state.sort === key) state.order = state.order === "asc" ? "desc" : "asc";
-        else { state.sort = key; state.order = key === "duration" ? "desc" : "asc"; }
+        else { state.sort = key; state.order = DESC_FIRST.has(key) ? "desc" : "asc"; }
         state.page = 1; load();
       });
     });
@@ -270,6 +303,14 @@
       const k = t.dataset.k;
       if (k === "age") { state.min_hours = null; state.max_hours = null; }
       else { state[k] = ""; if (k === "q") $("f-q").value = ""; else $("f-" + k).value = ""; }
+      state.page = 1; load();
+    });
+    $("sev-counts").addEventListener("click", (e) => {
+      const t = e.target.closest("button[data-sev]");
+      if (!t) return;
+      const lv = t.dataset.sev;
+      state.severity = state.severity.toLowerCase() === lv ? "" : lv;
+      $("f-severity").value = state.severity;
       state.page = 1; load();
     });
     $("export-btn").addEventListener("click", () => TC.toast("Đang chuẩn bị file Excel…"));

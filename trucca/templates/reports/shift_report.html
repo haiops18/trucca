@@ -67,6 +67,8 @@
   table.list .app { font-weight: 700; width: 34%; word-break: break-word; }
   table.list .x { color: var(--red); font-size: 9px; font-weight: 700; margin-left: 3px; }
   table.list .sum { color: #475569; word-break: break-word; }
+  table.list .start { color: #64748b; font-size: 9px; white-space: nowrap; width: 96px; text-align: right;
+    font-variant-numeric: tabular-nums; }
   table.list .dur { color: var(--orange); font-weight: 800; text-align: right; white-space: nowrap; width: 58px; }
   .more { font-size: 9px; color: var(--muted); margin-top: 6px; }
   .empty { font-size: 9.5px; color: var(--muted); padding: 2px 0; }
@@ -169,6 +171,7 @@
         <tr>
           <td class="app">{{ h.application }}{% if h.count > 1 %}<span class="x">×{{ h.count }}</span>{% endif %}</td>
           <td class="sum">{{ h.summary }}</td>
+          <td class="start" title="Thời gian bắt đầu">{{ h.start_label or '' }}</td>
           <td class="dur">{{ h.duration }}</td>
         </tr>
         {% endfor %}

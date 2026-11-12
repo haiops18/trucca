@@ -1,6 +1,15 @@
 # Lịch sử thay đổi
 
-## 1.0.1 – 2026-11-12
+## 1.1.0 – 2026-11-12
+
+Chi tiết xem `CHANGELOG.md`.
+
+- Cột "Thời gian bắt đầu" trên web và Excel; sắp xếp mặc định theo thời gian bắt đầu giảm dần.
+- Chuẩn hoá mức độ không phân biệt hoa thường (`severity_mapping`), migration `0003` chuẩn hoá dữ liệu lịch sử.
+- Module "Quản trị" gộp Người dùng / Hệ thống / Đổi mật khẩu; `/account` chuyển hướng tới `/admin/password`.
+- Đã gộp các thay đổi 1.0.1 bên dưới (chưa từng phát hành riêng).
+
+## 1.0.1 – 2026-11-12 (gộp vào 1.1.0)
 
 - Tài khoản quản trị mặc định `admin` / `admin` khi DB chưa có người dùng và `.env` không đặt
   `TRUCCA_ADMIN_USERNAME` / `TRUCCA_ADMIN_PASSWORD`; bắt buộc đổi mật khẩu ở lần đăng nhập đầu.

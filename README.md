@@ -8,7 +8,9 @@ Có đăng nhập và phân quyền **Xem / Quản trị**. Chạy bằng `docke
 - [Chạy nhanh (demo với mock Alertmanager)](#chạy-nhanh-demo-với-mock-alertmanager)
 - [Triển khai thật](#triển-khai-thật)
 - [Cấu hình](#cấu-hình)
-- [Người dùng và phân quyền](#người-dùng-và-phân-quyền)
+- [Trang cảnh báo và Excel](#trang-cảnh-báo-và-excel)
+- [Mức độ (severity)](#mức-độ-severity)
+- [Người dùng và phân quyền (module Quản trị)](#người-dùng-và-phân-quyền-module-quản-trị)
 - [Quy tắc thu thập và tính báo cáo](#quy-tắc-thu-thập-và-tính-báo-cáo)
 - [Vận hành](#vận-hành)
 - [Troubleshooting](#troubleshooting)
@@ -49,6 +51,7 @@ trucca/                 mã nguồn ứng dụng
   config.py             đọc + validate config (pydantic)
   collector.py          gọi Alertmanager, reconcile, ghi DB
   alerts_query.py       lọc / sắp xếp / gộp nhóm cảnh báo đang diễn ra
+  severity.py           chuẩn hoá mức độ (critical / warning / other) theo severity_mapping
   export_xlsx.py        xuất Excel
   reports/calc.py       tính số liệu báo cáo ca (hàm thuần, có unit test)
   reports/service.py    lấy dữ liệu, snapshot hết ca, sinh PDF
@@ -58,7 +61,7 @@ trucca/                 mã nguồn ứng dụng
   templates/ static/    giao diện
 migrations/             Alembic
 mock/                   mock Alertmanager + script sinh lịch sử giả
-tests/                  unit test
+tests/                  unit test; tests/integration: test tích hợp với PostgreSQL thật
 config/config.example.yml, .env.example, Dockerfile, docker-compose.yml
 ```
 
@@ -66,7 +69,7 @@ config/config.example.yml, .env.example, Dockerfile, docker-compose.yml
 
 | Bảng | Ý nghĩa |
 |---|---|
-| `alerts` | trạng thái mới nhất mỗi `fingerprint` (active/resolved) – nguồn của bảng "đang diễn ra" |
+| `alerts` | trạng thái mới nhất mỗi `fingerprint` (active/resolved) – nguồn của bảng "đang diễn ra"; `severity` (gốc) + `severity_normalized` |
 | `alert_occurrences` | mỗi lần **phát sinh** là 1 dòng (`starts_at`, `resolved_at`, `resolve_source`) – nguồn của báo cáo ca |
 | `shift_snapshots` | số liệu báo cáo chốt lúc hết ca (JSON) + đường dẫn PDF |
 | `users`, `sessions`, `audit_log` | người dùng, phiên đăng nhập, nhật ký thao tác |
@@ -120,17 +123,17 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 ### Build và đẩy image lên registry nội bộ
 
 ```bash
-export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=1.0.0
+export TRUCCA_IMAGE=registry.local/noc/trucca TRUCCA_VERSION=1.1.0
 docker build \
   --build-arg APP_VERSION=$TRUCCA_VERSION \
   --build-arg BUILD_DATE=$(date -u +%FT%TZ) \
   --build-arg VCS_REF=$(git rev-parse --short HEAD) \
-  -t $TRUCCA_IMAGE:$TRUCCA_VERSION .
-docker push $TRUCCA_IMAGE:$TRUCCA_VERSION
+  -t $TRUCCA_IMAGE:$TRUCCA_VERSION -t $TRUCCA_IMAGE:latest .
+docker push $TRUCCA_IMAGE:$TRUCCA_VERSION && docker push $TRUCCA_IMAGE:latest
 ```
 
 Máy chạy chỉ cần `docker-compose.yml`, `.env`, thư mục `config/` rồi `docker compose pull && docker compose up -d`.
-Phiên bản hiển thị ở trang **Hệ thống** và `/healthz` lấy từ build arg `APP_VERSION`.
+Phiên bản hiển thị ở **Quản trị → Hệ thống** và `/healthz` lấy từ build arg `APP_VERSION`.
 
 ---
 
@@ -145,12 +148,12 @@ Phiên bản hiển thị ở trang **Hệ thống** và `/healthz` lấy từ b
 
 **Áp dụng thay đổi – không build lại image:**
 
-- Trang **Hệ thống → Nạp lại cấu hình**, hoặc
+- **Quản trị → Hệ thống → Nạp lại cấu hình**, hoặc
 - chờ tối đa 10 giây (TrucCa tự phát hiện file thay đổi), hoặc
 - `docker compose restart trucca`.
 
 Mục `database`, `server` cần restart. Nếu file mới sai, TrucCa **giữ cấu hình cũ**, ghi log và hiện lỗi ở
-trang Hệ thống. Khi khởi động với cấu hình sai, container dừng và in danh sách lỗi, ví dụ:
+trang Quản trị → Hệ thống. Khi khởi động với cấu hình sai, container dừng và in danh sách lỗi, ví dụ:
 
 ```
 [TrucCa] Cấu hình không hợp lệ:
@@ -170,6 +173,7 @@ trang Hệ thống. Khi khởi động với cấu hình sai, container dừng v
 | | `resolve_after_missing_polls` | `2` | số lần poll thành công liên tiếp vắng mặt thì coi là clear |
 | | `mass_clear_guard` | `0.5 / 10 / 10` | nhiều cảnh báo biến mất cùng lúc thì chờ `polls` lần |
 | `labels` | `owner`, `application`, `alertname`, `severity`, `instance` | trùng tên | label nào là "Người xử lý", "Hệ thống"... |
+| `severity_mapping` | `critical`, `warning` | `[critical]`, `[warning]` | nhóm mức độ, so khớp không phân biệt hoa thường – xem [Mức độ](#mức-độ-severity) |
 | | `summary_annotation` | `summary` | annotation dùng làm Summary |
 | `filters` | `match`, `match_regex` | `{}` | chỉ lấy cảnh báo có label khớp |
 | | `exclude_alertnames` | `[]` | bỏ qua theo tên |
@@ -215,7 +219,62 @@ shifts:
 
 ---
 
-## Người dùng và phân quyền
+## Trang cảnh báo và Excel
+
+Cột (web và Excel cùng thứ tự):
+
+`STT | Tên cảnh báo | Summary | Thời gian bắt đầu | Thời gian tồn | Người xử lý | Hệ thống`
+
+Excel có thêm 2 cột cuối: `Mức độ` (Critical / Warning / Khác) và `Số giờ tồn` (số, để lọc/sắp xếp trong Excel).
+
+- **Thời gian bắt đầu** = `startsAt` của cảnh báo, hiển thị `dd/MM/yyyy HH:mm:ss` theo `timezone` trong config
+  (mặc định Asia/Ho_Chi_Minh). Trong Excel là kiểu ngày giờ thật (định dạng `dd/mm/yyyy hh:mm:ss`), lọc/sắp xếp được.
+- **Sắp xếp mặc định: cảnh báo bắt đầu MỚI NHẤT ở trên cùng** (`startsAt` giảm dần). Bấm tiêu đề cột để đổi
+  (bấm lại để đảo chiều). Khi bật "Gộp cảnh báo", thời gian bắt đầu của nhóm là cảnh báo sớm nhất trong nhóm.
+- **STT** đánh lại theo đúng thứ tự đang hiển thị sau khi lọc / sắp xếp.
+- **Xuất Excel** dùng đúng bộ lọc và thứ tự sắp xếp đang hiển thị trên web (không phân trang).
+- Báo cáo cuối ca (PDF): mục "Cảnh báo tồn cần bàn giao" có thêm thời gian bắt đầu, **vẫn sắp theo thời gian tồn
+  giảm dần** như mẫu; bố cục và các mục khác giữ nguyên.
+
+API (dùng nội bộ cho giao diện): `GET /api/alerts?sort=starts_at|duration|alertname|summary|owner|application|severity&order=desc|asc`
+– mặc định `sort=starts_at&order=desc`.
+
+## Mức độ (severity)
+
+Label `severity` được chuẩn hoá về 3 nhóm **critical / warning / other** (hiển thị Critical / Warning / Khác):
+bỏ khoảng trắng hai đầu và **so khớp không phân biệt hoa thường** – `Warning`, `WARNING`, `warning`, `" warning "`
+đều là Warning. Giá trị không thuộc nhóm nào (vd `info`) hoặc thiếu label → **Khác**.
+
+```yaml
+severity_mapping:
+  critical: [critical]          # thêm biến thể khác nếu cần, vd [critical, page, p1]
+  warning: [warning]            # vd [warning, warn, minor]
+```
+
+- Áp dụng nhất quán cho: bộ lọc "Mức độ", badge màu, số đếm Critical/Warning/Khác (bấm để lọc), Excel và API
+  (`severity=warning`, `severity=WARNING`, `severity=Warning` cho cùng kết quả; nhận thêm `other`/`Khác`).
+- Lưu trong DB: cột `severity` giữ **giá trị gốc**, `labels` giữ nguyên toàn bộ label; cột mới `severity_normalized`
+  lưu nhóm chuẩn (bảng `alerts` và `alert_occurrences`). Di chuột vào badge để xem giá trị gốc.
+- Đổi `severity_mapping` **không cần build lại image**: nạp lại cấu hình (tự động ≤ 10 giây, hoặc trang
+  Quản trị → Hệ thống → "Nạp lại cấu hình", hoặc restart container); toàn bộ dữ liệu hiện tại và lịch sử được
+  chuẩn hoá lại theo mapping mới.
+- Báo cáo cuối ca hiện không có mục thống kê theo mức độ (giữ bố cục mẫu).
+
+## Người dùng và phân quyền (module Quản trị)
+
+Menu **Quản trị** (`/admin`) gộp 3 mục:
+
+| Mục | URL | Xem (`viewer`) | Quản trị (`admin`) |
+|---|---|:-:|:-:|
+| Người dùng | `/admin/users` | 403 | ✓ |
+| Hệ thống (trạng thái, cấu hình, nạp lại cấu hình, nhật ký) | `/admin/system` | 403 | ✓ |
+| Đổi mật khẩu (của chính mình) | `/admin/password` | ✓ | ✓ |
+
+- `/admin` tự chuyển tới mục đầu tiên được phép (admin → Người dùng, viewer → Đổi mật khẩu). Viewer chỉ thấy mục
+  Đổi mật khẩu; quyền được kiểm tra ở **từng route/API** phía server (gọi trái quyền trả 403), không chỉ ẩn giao diện.
+- URL cũ vẫn dùng được: `/account` → chuyển hướng 301 tới `/admin/password`. `/admin/users`, `/admin/system` giữ nguyên.
+- API đổi mật khẩu: `POST /api/admin/password` (mọi người dùng đã đăng nhập, chỉ đổi của chính mình, cần mật khẩu
+  hiện tại). API cũ `POST /api/account/password` **deprecated** – vẫn hoạt động, trả thêm header `Deprecation: true`.
 
 | Chức năng | Xem (`viewer`) | Quản trị (`admin`) |
 |---|:-:|:-:|
@@ -224,7 +283,7 @@ shifts:
 | Đổi mật khẩu của mình | ✓ | ✓ |
 | Chốt lại & sinh lại PDF báo cáo | | ✓ |
 | Thêm / sửa / khoá / xoá người dùng, đặt lại mật khẩu | | ✓ |
-| Trang Hệ thống: trạng thái, cấu hình, nạp lại cấu hình, nhật ký thao tác | | ✓ |
+| Quản trị → Hệ thống: trạng thái, cấu hình, nạp lại cấu hình, nhật ký thao tác | | ✓ |
 
 - Admin đầu tiên tạo khi DB chưa có người dùng (mặc định `admin` / `admin`, hoặc theo `.env`); lần đăng nhập đầu **bắt buộc đổi mật khẩu**.
 - Người dùng mới / bị đặt lại mật khẩu cũng phải đổi mật khẩu ở lần đăng nhập kế tiếp.
@@ -236,7 +295,7 @@ shifts:
   (30) kể cả khi đóng trình duyệt, tự gia hạn khi còn dùng. Bỏ chọn (máy dùng chung): đăng nhập mất khi đóng
   trình duyệt, hoặc sau `session_ttl_hours` giờ (12) không hoạt động. TrucCa không lưu mật khẩu ở trình duyệt;
   việc lưu mật khẩu (nếu muốn) do trình quản lý mật khẩu của trình duyệt đảm nhận.
-- Mọi đăng nhập, thay đổi người dùng, nạp cấu hình, sinh báo cáo đều ghi vào nhật ký (trang Hệ thống).
+- Mọi đăng nhập, thay đổi người dùng, nạp cấu hình, sinh báo cáo đều ghi vào nhật ký (Quản trị → Hệ thống).
 
 **Quên mật khẩu admin duy nhất:** dùng một admin khác để đặt lại; nếu không còn admin nào:
 
@@ -299,12 +358,12 @@ Từ 24 giờ: `8d 9h`; dưới 24 giờ: `23.0h`, `12.7h` (1 chữ số thập 
 |---|---|
 | Log (JSON, mỗi dòng 1 sự kiện) | `docker compose logs -f trucca` |
 | Sức khoẻ | `GET /healthz` → `{"status":"ok","db":true,"alertmanager":"ok|degraded"}`; HEALTHCHECK của image gọi endpoint này |
-| Trạng thái thu thập, tác vụ, cấu hình | trang **Hệ thống** (admin) |
+| Trạng thái thu thập, tác vụ, cấu hình | **Quản trị → Hệ thống** (admin) |
 | Sao lưu DB | `docker compose exec postgres pg_dump -U trucca trucca > backup.sql` |
 | Khôi phục | `docker compose exec -T postgres psql -U trucca trucca < backup.sql` |
 | Nâng cấp | đổi `TRUCCA_VERSION`, `docker compose pull && docker compose up -d` (migration tự chạy) |
 
-Log không chứa mật khẩu/token; trang Hệ thống hiển thị secret dạng `**********`.
+Log không chứa mật khẩu/token; trang Quản trị → Hệ thống hiển thị secret dạng `**********`.
 
 ---
 
@@ -324,7 +383,7 @@ Log không chứa mật khẩu/token; trang Hệ thống hiển thị secret d�
 | Tải PDF báo lỗi | xem `docker compose logs trucca` (`report_pdf_failed`); thường do thiếu RAM – cấp ≥ 512 MB cho container |
 | Báo cáo ca cũ sai số do lúc đó TrucCa chưa chạy | admin chọn ca đó → "Chốt lại & sinh PDF" |
 | Cổng 8080 đã dùng | đặt `TRUCCA_PORT` khác trong `.env` |
-| Quên mật khẩu | xem mục [Người dùng và phân quyền](#người-dùng-và-phân-quyền) |
+| Quên mật khẩu | xem mục [Người dùng và phân quyền](#người-dùng-và-phân-quyền-module-quản-trị) |
 
 ---
 
@@ -334,9 +393,33 @@ Log không chứa mật khẩu/token; trang Hệ thống hiển thị secret d�
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 ruff check .
-pytest -q                    # unit test: thời gian tồn, ca qua đêm, phát sinh/clear/tồn, top N,
-                             # so sánh hôm qua, bàn giao, reconcile, Excel, config, mật khẩu, render
+pytest -q                    # unit test: thời gian tồn, ca qua đêm, phát sinh/clear/tồn, top N, so sánh hôm qua,
+                             # bàn giao, reconcile, Excel (đọc lại bằng openpyxl), chuẩn hoá severity, sắp xếp, config
 ```
+
+### Test tích hợp (PostgreSQL thật)
+
+Kiểm tra API lọc mức độ, sắp xếp, Excel qua API, migration chạy lặp lại, phân quyền module Quản trị, redirect URL cũ.
+Cần một PostgreSQL dùng riêng cho test (user có quyền `CREATE DATABASE`; test tạo/xoá database `trucca_it`).
+Không đặt `TRUCCA_TEST_DATABASE_URL` thì các test này được bỏ qua và pytest báo rõ lý do.
+
+```bash
+docker run -d --rm --name trucca-test-pg -e POSTGRES_USER=trucca_test -e POSTGRES_PASSWORD=<mật-khẩu> \
+  -p 127.0.0.1:55432:5432 postgres:16.4-alpine
+export TRUCCA_TEST_DATABASE_URL=postgresql+psycopg://trucca_test:<mật-khẩu>@127.0.0.1:55432/postgres
+pytest -q                    # unit + tích hợp
+docker stop trucca-test-pg
+```
+
+### Quy trình phát hành
+
+1. `ruff check .` và `pytest -q` (có `TRUCCA_TEST_DATABASE_URL`) – tất cả phải pass.
+2. Thử end-to-end: `docker compose --profile demo up -d --wait` với mock (đặt `alertmanager.url` tới mock),
+   kiểm tra trang cảnh báo, Excel, lọc mức độ, module Quản trị, sinh báo cáo ca.
+3. Tăng `TRUCCA_VERSION` trong `.env` (semver), `docker compose build`, gắn thêm tag `latest`:
+   `docker tag registry.local/noc/trucca:$TRUCCA_VERSION registry.local/noc/trucca:latest`.
+4. `docker compose up -d --wait` – migration tự chạy khi khởi động; kiểm tra container `healthy`.
+5. Cập nhật `CHANGELOG.md`.
 
 Chạy local cần PostgreSQL (`DATABASE_URL`) và `TRUCCA_CONFIG=config/config.yml`:
 `python -m trucca.main`. Render PDF cần `playwright install chromium`.

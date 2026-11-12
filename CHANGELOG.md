@@ -11,6 +11,8 @@ Phiên bản major vì thay đổi hành vi mặc định (sắp xếp theo th�
 ### Added
 - **`install.sh`**: cài đặt / nâng cấp một lệnh – hỏi địa chỉ Alertmanager, thư mục lưu cấu hình + dữ liệu, cổng;
   tự `docker load` file image (kiểm tra SHA-256), tạo cấu hình, sinh mật khẩu PostgreSQL, chạy docker compose.
+- Release kèm image PostgreSQL (`postgres-16.4-alpine.tar.gz`); `install.sh` tự tải cả 2 image từ Release
+  (`gh` hoặc `curl`) nên cài được chỉ với `git clone` + `./install.sh`, hoặc offline khi chép sẵn file.
 - `scripts/package-image.sh`: đóng gói image thành `trucca-image-<version>.tar.gz` (+ `.sha256`) để phát hành.
 - `docker-compose.yml`: thư mục cấu hình / dữ liệu / file env cấu hình được qua `TRUCCA_CONFIG_DIR`,
   `TRUCCA_DATA_DIR`, `TRUCCA_ENV_FILE` (mặc định giữ nguyên `./config`, `./data`, `.env`).

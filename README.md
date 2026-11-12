@@ -111,14 +111,16 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 
 ## Cài đặt bằng script (khuyến nghị)
 
-Trên máy chủ chỉ cần Docker (có `docker compose` v2) và `git`:
+Trên máy chủ chỉ cần Docker (có `docker compose` v2), `git` và `curl`:
 
 ```bash
 git clone https://github.com/haiops18/trucca.git && cd trucca
-# Tải file image ở trang Releases (vd v2.0.0): trucca-image-2.0.0.tar.gz (+ .sha256), đặt cạnh install.sh
-#   hoặc, nếu đã đăng nhập gh:  gh release download v2.0.0 -p 'trucca-image-*'
 sudo ./install.sh
 ```
+
+Script tự tải 2 image từ GitHub Release `v<version>`: `trucca-image-<version>.tar.gz` và
+`postgres-16.4-alpine.tar.gz` (kèm `.sha256`). **Máy không có internet:** tải trước 4 file đó ở trang
+[Releases](https://github.com/haiops18/trucca/releases), chép vào thư mục repo (cạnh `install.sh`) rồi chạy script.
 
 Script hỏi 3 thông tin rồi tự làm phần còn lại:
 
@@ -128,8 +130,8 @@ Script hỏi 3 thông tin rồi tự làm phần còn lại:
 | Thư mục lưu cấu hình và dữ liệu | `/opt/trucca` | tạo `config/config.yml`, `data/` (PostgreSQL + PDF), `trucca.env` |
 | Cổng web | `8080` | báo lỗi nếu cổng đang bị chương trình khác dùng |
 
-Các bước script thực hiện: kiểm tra Docker → `docker load` file image (kiểm tra SHA-256; nếu không có file và đã
-đăng nhập `gh` thì tự tải từ Release) → tạo thư mục, phân quyền UID 10001 → tạo `config.yml` và ghi
+Các bước script thực hiện: kiểm tra Docker → nạp image TrucCa + PostgreSQL (dùng image có sẵn, hoặc `docker load`
+file cạnh script, hoặc tự tải từ Release bằng `gh`/`curl`; luôn kiểm tra SHA-256) → tạo thư mục, phân quyền UID 10001 → tạo `config.yml` và ghi
 `alertmanager.url` → tạo `trucca.env` với mật khẩu PostgreSQL ngẫu nhiên (quyền 600) → `docker compose up --wait`
 → in địa chỉ truy cập. Đăng nhập lần đầu `admin` / `admin`, hệ thống bắt đổi mật khẩu ngay.
 
@@ -147,7 +149,7 @@ docker compose -p trucca --env-file /opt/trucca/trucca.env -f ./docker-compose.y
 ```
 
 Đóng gói image để phát hành (người build): `docker compose build && ./scripts/package-image.sh`
-→ `dist/trucca-image-<version>.tar.gz` + `.sha256`, đính kèm vào GitHub Release `v<version>`.
+→ `dist/trucca-image-<version>.tar.gz`, `dist/postgres-<tag>.tar.gz` + `.sha256`, đính kèm vào GitHub Release `v<version>`.
 
 ## Triển khai thủ công
 

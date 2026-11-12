@@ -1,5 +1,8 @@
 name: trucca
 
+# Thư mục cấu hình / dữ liệu mặc định là ./config và ./data cạnh file này.
+# install.sh đặt TRUCCA_CONFIG_DIR, TRUCCA_DATA_DIR, TRUCCA_ENV_FILE để lưu ở thư mục khác (vd /opt/trucca).
+
 x-logging: &logging
   driver: json-file
   options:
@@ -16,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Dat POSTGRES_PASSWORD trong .env}
       TZ: Asia/Ho_Chi_Minh
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ${TRUCCA_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
     healthcheck:
       # -h 127.0.0.1: kiểm tra qua TCP để không báo healthy sớm khi Postgres đang khởi tạo lần đầu
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -38,13 +41,13 @@ services:
         condition: service_healthy
     ports:
       - "${TRUCCA_PORT:-8080}:8080"
-    env_file: .env
+    env_file: ${TRUCCA_ENV_FILE:-.env}   # install.sh đặt file .env nằm trong thư mục cài đặt
     environment:
       TZ: Asia/Ho_Chi_Minh
       DATABASE_URL: postgresql://${POSTGRES_USER:-trucca}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trucca}
     volumes:
-      - ./config:/app/config:ro
-      - ./data/trucca:/data          # báo cáo PDF tại /data/reports; trên host: chown 10001:10001
+      - ${TRUCCA_CONFIG_DIR:-./config}:/app/config:ro
+      - ${TRUCCA_DATA_DIR:-./data}/trucca:/data          # báo cáo PDF tại /data/reports; trên host: chown 10001:10001
     logging: *logging
     # Gọi Alertmanager ở compose/network khác: join chung network đó
     # (bỏ comment cả khối "networks" ở cuối file).

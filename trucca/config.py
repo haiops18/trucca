@@ -169,6 +169,7 @@ class ServerConfig(_Base):
 
 class AuthConfig(_Base):
     session_ttl_hours: float = Field(12, gt=0, le=24 * 30)
+    remember_days: int = Field(30, ge=1, le=365)
     cookie_secure: bool = False
     max_failed_attempts: int = Field(5, ge=1, le=100)
     lockout_minutes: int = Field(15, ge=1, le=24 * 60)

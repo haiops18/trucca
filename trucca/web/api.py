@@ -29,7 +29,7 @@ from ..export_xlsx import build_alerts_xlsx
 from ..reports import service as reports
 from ..reports.service import ReportError
 from ..timeutil import current_shift, utcnow
-from .deps import SESSION_COOKIE, api_admin, api_user, api_user_ready, client_ip, state
+from .deps import SESSION_COOKIE, api_admin, api_user, api_user_ready, client_ip, set_session_cookie, state
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -50,6 +50,7 @@ def _user_json(u: CurrentUser) -> dict[str, Any]:
 class LoginBody(BaseModel):
     username: str = Field(max_length=64)
     password: str = Field(max_length=256)
+    remember: bool = False
 
 
 @router.post("/auth/login")
@@ -57,15 +58,12 @@ def login(body: LoginBody, request: Request) -> JSONResponse:
     st = state(request)
     try:
         token, user = auth.login(st.engine, st.config.auth, body.username, body.password, client_ip(request),
-                                 request.headers.get("user-agent"))
+                                 request.headers.get("user-agent"), remember=body.remember)
     except AuthError as e:
         raise _auth_error(e) from e
     resp = JSONResponse({"user": _user_json(user),
                          "redirect": f"{st.base}/account" if user.must_change_password else f"{st.base}/"})
-    resp.set_cookie(
-        SESSION_COOKIE, token, httponly=True, samesite="lax", secure=st.config.auth.cookie_secure,
-        path=st.base or "/", max_age=int(st.config.auth.session_ttl_hours * 3600),
-    )
+    set_session_cookie(resp, token, st.config.auth, st.base or "/", body.remember)
     return resp
 
 

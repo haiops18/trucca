@@ -33,7 +33,7 @@ from .reports.render import ReportRenderer
 from .reports.service import finalize_due_shifts
 from .timeutil import utcnow
 from .web import api, pages
-from .web.deps import PageRedirect
+from .web.deps import SESSION_COOKIE, PageRedirect, set_session_cookie
 
 log = logging.getLogger("trucca")
 
@@ -219,9 +219,21 @@ def create_app(cfgm: ConfigManager | None = None) -> FastAPI:
     app = FastAPI(title="TrucCa", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url=None)
 
+    def _refresh_session_cookie(request: Request, resp: Response) -> None:
+        """Phiên "ghi nhớ đăng nhập" vừa được gia hạn phía server -> gia hạn cả cookie (trượt theo hoạt động)."""
+        user = getattr(request.state, "user", None)
+        token = request.cookies.get(SESSION_COOKIE)
+        if not (user and user.remember and user.renewed and token):
+            return
+        if any(h.startswith(f"{SESSION_COOKIE}=") for h in resp.headers.getlist("set-cookie")):
+            return  # login/logout đã tự đặt hoặc xoá cookie
+        st = request.app.state.trucca
+        set_session_cookie(resp, token, st.config.auth, base or "/", True)
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
         resp: Response = await call_next(request)
+        _refresh_session_cookie(request, resp)
         for k, v in SECURITY_HEADERS.items():
             resp.headers.setdefault(k, v)
         resp.headers.setdefault("Content-Security-Policy", DEFAULT_CSP)

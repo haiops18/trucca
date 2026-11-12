@@ -5,9 +5,10 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 
-from ..auth.service import CurrentUser, session_user
+from ..auth.service import CurrentUser, session_ttl, session_user
+from ..config import AuthConfig
 
 SESSION_COOKIE = "trucca_session"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -32,9 +33,18 @@ def optional_user(request: Request) -> CurrentUser | None:
     if hasattr(request.state, "user"):
         return request.state.user
     st = state(request)
-    user = session_user(st.engine, request.cookies.get(SESSION_COOKIE), st.config.auth.session_ttl_hours)
+    user = session_user(st.engine, request.cookies.get(SESSION_COOKIE), st.config.auth)
     request.state.user = user
     return user
+
+
+def set_session_cookie(resp: Response, token: str, cfg: AuthConfig, path: str, remember: bool) -> None:
+    """Ghi nhớ đăng nhập: cookie bền (sống qua việc đóng trình duyệt), hạn = remember_days, gia hạn khi còn dùng.
+    Không ghi nhớ: cookie phiên trình duyệt (mất khi đóng trình duyệt); phía server hết hạn sau session_ttl_hours
+    không hoạt động. Cả hai trường hợp đều giữ đăng nhập khi tải lại trang."""
+    max_age = int(session_ttl(cfg, True).total_seconds()) if remember else None
+    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=cfg.cookie_secure,
+                    path=path, max_age=max_age)
 
 
 def _check_csrf(request: Request, user: CurrentUser) -> None:

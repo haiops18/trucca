@@ -184,7 +184,7 @@ trang Hệ thống. Khi khởi động với cấu hình sai, container dừng v
 | | `output_dir` | `/data/reports` | nơi lưu `noc_shift_report_<CA>_<YYYYMMDD>.pdf` |
 | `retention_days` | | `90` | xoá lịch sử / snapshot / PDF / nhật ký cũ |
 | `server` | `port`, `base_path` | 8080, `/` | `base_path: /trucca` khi đặt sau reverse proxy theo đường dẫn con |
-| `auth` | `session_ttl_hours`, `cookie_secure`, `max_failed_attempts`, `lockout_minutes`, `min_password_length` | 12, false, 5, 15, 8 | đặt `cookie_secure: true` khi dùng HTTPS |
+| `auth` | `session_ttl_hours`, `remember_days`, `cookie_secure`, `max_failed_attempts`, `lockout_minutes`, `min_password_length` | 12, 30, false, 5, 15, 8 | đặt `cookie_secure: true` khi dùng HTTPS |
 
 ### Ánh xạ label
 
@@ -226,12 +226,16 @@ shifts:
 | Thêm / sửa / khoá / xoá người dùng, đặt lại mật khẩu | | ✓ |
 | Trang Hệ thống: trạng thái, cấu hình, nạp lại cấu hình, nhật ký thao tác | | ✓ |
 
-- Admin đầu tiên tạo từ `.env` khi DB chưa có người dùng; lần đăng nhập đầu **bắt buộc đổi mật khẩu**.
+- Admin đầu tiên tạo khi DB chưa có người dùng (mặc định `admin` / `admin`, hoặc theo `.env`); lần đăng nhập đầu **bắt buộc đổi mật khẩu**.
 - Người dùng mới / bị đặt lại mật khẩu cũng phải đổi mật khẩu ở lần đăng nhập kế tiếp.
 - Mật khẩu: tối thiểu `min_password_length` ký tự, 3 trong 4 loại (thường, hoa, số, ký tự đặc biệt), băm scrypt.
 - Sai mật khẩu `max_failed_attempts` lần → khoá `lockout_minutes` phút (admin có thể mở khoá).
 - Luôn phải còn ít nhất 1 admin đang hoạt động; không tự xoá được tài khoản của mình.
 - Đổi vai trò / vô hiệu hoá / đặt lại mật khẩu → các phiên của người đó bị đăng xuất ngay.
+- Tải lại trang không làm mất đăng nhập. Ô **"Ghi nhớ đăng nhập"** (mặc định bật) giữ phiên `remember_days` ngày
+  (30) kể cả khi đóng trình duyệt, tự gia hạn khi còn dùng. Bỏ chọn (máy dùng chung): đăng nhập mất khi đóng
+  trình duyệt, hoặc sau `session_ttl_hours` giờ (12) không hoạt động. TrucCa không lưu mật khẩu ở trình duyệt;
+  việc lưu mật khẩu (nếu muốn) do trình quản lý mật khẩu của trình duyệt đảm nhận.
 - Mọi đăng nhập, thay đổi người dùng, nạp cấu hình, sinh báo cáo đều ghi vào nhật ký (trang Hệ thống).
 
 **Quên mật khẩu admin duy nhất:** dùng một admin khác để đặt lại; nếu không còn admin nào:

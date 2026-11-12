@@ -82,6 +82,7 @@ server:
 
 auth:
   session_ttl_hours: 12         # phiên hết hạn sau 12 giờ không hoạt động
+  remember_days: 30             # "Ghi nhớ đăng nhập": giữ phiên 30 ngày (gia hạn khi còn dùng)
   cookie_secure: false          # true khi truy cập qua HTTPS
   max_failed_attempts: 5        # sai mật khẩu 5 lần ...
   lockout_minutes: 15           # ... khoá 15 phút

@@ -15,7 +15,7 @@
     if (!username || !password) { showError("Nhập tên đăng nhập và mật khẩu."); return; }
     TC.busy(btn, true, "Đang đăng nhập…");
     try {
-      const r = await TC.api("/auth/login", { method: "POST", body: { username, password }, noRedirect: true });
+      const r = await TC.api("/auth/login", { method: "POST", body: { username, password, remember: form.remember.checked }, noRedirect: true });
       location.href = r.redirect;
     } catch (e) {
       showError(e.message);

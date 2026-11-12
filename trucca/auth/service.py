@@ -41,6 +41,9 @@ class CurrentUser:
     must_change_password: bool
     session_id: int
     csrf_token: str
+    remember: bool = False
+    renewed: bool = False  # phiên vừa được gia hạn trượt -> cần gia hạn cả cookie
+
 
     @property
     def is_admin(self) -> bool:
@@ -103,8 +106,13 @@ def ensure_bootstrap_admin(engine: Engine, username: str | None, password: str |
 # --------------------------------------------------------------------------- login / session
 
 
+def session_ttl(cfg: AuthConfig, remember: bool) -> timedelta:
+    """Thời gian phiên còn hiệu lực kể từ lần hoạt động cuối."""
+    return timedelta(days=cfg.remember_days) if remember else timedelta(hours=cfg.session_ttl_hours)
+
+
 def login(engine: Engine, cfg: AuthConfig, username: str, password: str, ip: str | None,
-          user_agent: str | None) -> tuple[str, CurrentUser]:
+          user_agent: str | None, remember: bool = False) -> tuple[str, CurrentUser]:
     generic = AuthError("Tên đăng nhập hoặc mật khẩu không đúng", "bad_credentials", 401)
     now = utcnow()
     username = (username or "").strip()
@@ -143,25 +151,27 @@ def login(engine: Engine, cfg: AuthConfig, username: str, password: str, ip: str
             sid = conn.execute(
                 sessions.insert().values(
                     token_hash=token_hash(token), user_id=row.id, csrf_token=csrf, created_at=now,
-                    expires_at=now + timedelta(hours=cfg.session_ttl_hours), last_seen_at=now,
+                    expires_at=now + session_ttl(cfg, remember), last_seen_at=now, remember=remember,
                     ip=ip, user_agent=(user_agent or "")[:300],
                 ).returning(sessions.c.id)
             ).scalar_one()
             conn.execute(update(users).where(users.c.id == row.id)
                          .values(failed_attempts=0, locked_until=None, last_login_at=now))
-            user = CurrentUser(row.id, row.username, row.full_name, row.role, row.must_change_password, sid, csrf)
-            audit(conn, user, "auth.login", ip=ip)
+            user = CurrentUser(row.id, row.username, row.full_name, row.role, row.must_change_password, sid, csrf,
+                               remember=remember)
+            audit(conn, user, "auth.login", ip=ip, detail={"remember": remember})
     if failure is not None:
         raise failure
     return token, user
 
 
-def session_user(engine: Engine, token: str | None, ttl_hours: float) -> CurrentUser | None:
+def session_user(engine: Engine, token: str | None, cfg: AuthConfig) -> CurrentUser | None:
     if not token or len(token) > 200:
         return None
     now = utcnow()
     stmt = (
-        select(sessions.c.id, sessions.c.csrf_token, sessions.c.last_seen_at, users.c.id.label("uid"),
+        select(sessions.c.id, sessions.c.csrf_token, sessions.c.last_seen_at, sessions.c.remember,
+               users.c.id.label("uid"),
                users.c.username, users.c.full_name, users.c.role, users.c.must_change_password)
         .join(users, users.c.id == sessions.c.user_id)
         .where(sessions.c.token_hash == token_hash(token), sessions.c.expires_at > now, users.c.is_active.is_(True))
@@ -170,13 +180,14 @@ def session_user(engine: Engine, token: str | None, ttl_hours: float) -> Current
         row = conn.execute(stmt).first()
     if row is None:
         return None
-    if now - row.last_seen_at > TOUCH_INTERVAL:
+    renewed = now - row.last_seen_at > TOUCH_INTERVAL
+    if renewed:
         # Gia hạn trượt: phiên hết hạn sau ttl kể từ lần hoạt động cuối
         with engine.begin() as conn:
             conn.execute(update(sessions).where(sessions.c.id == row.id)
-                         .values(last_seen_at=now, expires_at=now + timedelta(hours=ttl_hours)))
+                         .values(last_seen_at=now, expires_at=now + session_ttl(cfg, row.remember)))
     return CurrentUser(row.uid, row.username, row.full_name, row.role, row.must_change_password, row.id,
-                       row.csrf_token)
+                       row.csrf_token, remember=row.remember, renewed=renewed)
 
 
 def logout(engine: Engine, user: CurrentUser, ip: str | None) -> None:

@@ -6,6 +6,9 @@
   `TRUCCA_ADMIN_USERNAME` / `TRUCCA_ADMIN_PASSWORD`; bắt buộc đổi mật khẩu ở lần đăng nhập đầu.
 - docker compose: mock Alertmanager mở cổng host `MOCK_AM_PORT` (mặc định 19093).
 - Logo đổi thành chữ **VTrucca** (chữ V màu vàng nhấn), favicon chữ V.
+- Thêm "Ghi nhớ đăng nhập" (mặc định bật, `auth.remember_days` = 30): phiên sống qua việc tải lại trang/đóng
+  trình duyệt, tự gia hạn khi còn dùng. Migration `0002` thêm cột `sessions.remember`.
+- Sửa lỗi: cookie phiên trước đây hết hạn cứng sau 12 giờ kể từ lúc đăng nhập dù người dùng vẫn đang làm việc.
 
 ## 1.0.0 – 2026-11-12
 

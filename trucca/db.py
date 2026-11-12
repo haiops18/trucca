@@ -128,6 +128,7 @@ sessions = Table(
     Column("created_at", TS, nullable=False),
     Column("expires_at", TS, nullable=False),
     Column("last_seen_at", TS, nullable=False),
+    Column("remember", Boolean, nullable=False, server_default=text("false")),
     Column("ip", Text),
     Column("user_agent", Text),
 )

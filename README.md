@@ -90,8 +90,9 @@ docker compose --profile demo up -d --wait      # chờ tới khi các service h
 docker compose exec trucca python -m mock.seed_history --days 8   # (tuỳ chọn) lịch sử 8 ngày cho báo cáo
 ```
 
-Mở `http://<máy-chủ>:8080`, đăng nhập bằng `TRUCCA_ADMIN_USERNAME` / `TRUCCA_ADMIN_PASSWORD` trong `.env`,
-đổi mật khẩu khi được yêu cầu.
+Mở `http://<máy-chủ>:8080`, đăng nhập bằng tài khoản mặc định **`admin` / `admin`** (hoặc
+`TRUCCA_ADMIN_USERNAME` / `TRUCCA_ADMIN_PASSWORD` nếu đã đặt trong `.env`). Hệ thống bắt buộc đổi mật khẩu ngay ở
+lần đăng nhập đầu tiên, trước khi dùng được bất kỳ chức năng nào.
 
 Thử các tình huống lỗi của Alertmanager (giao diện sẽ báo "Mất kết nối tới Alertmanager"):
 
@@ -107,6 +108,7 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 1. `cp .env.example .env` và đặt:
    - `POSTGRES_PASSWORD` – chỉ dùng chữ, số, `-`, `_` (để không phải URL-encode trong `DATABASE_URL`).
    - `TRUCCA_ADMIN_USERNAME`, `TRUCCA_ADMIN_PASSWORD` – admin đầu tiên, chỉ tạo khi DB chưa có người dùng.
+     Bỏ trống thì mặc định `admin` / `admin`; luôn bắt đổi mật khẩu ở lần đăng nhập đầu.
    - `ALERTMANAGER_*` nếu Alertmanager có xác thực.
    - `TRUCCA_IMAGE`, `TRUCCA_VERSION` – image trên registry nội bộ; `TRUCCA_PORT` – cổng trên host.
 2. `cp config/config.example.yml config/config.yml` và chỉnh `alertmanager.url`, `labels`, `filters`, `shifts`.

@@ -14,7 +14,7 @@
 {% if user %}
 <header class="topbar">
   <div class="topbar-inner">
-    <a class="brand" href="{{ base }}/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>TrucCa</a>
+    <a class="brand" href="{{ base }}/" aria-label="VTrucca – trang chủ"><span class="brand-v">V</span>Trucca</a>
     <nav class="nav" aria-label="Điều hướng chính">
       {% if not user.must_change_password %}
       <a href="{{ base }}/" {% if active == 'alerts' %}aria-current="page"{% endif %}>Cảnh báo</a>

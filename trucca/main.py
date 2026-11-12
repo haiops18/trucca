@@ -171,7 +171,7 @@ def build_state(cfgm: ConfigManager) -> AppState:
     wait_for_db(engine)
     run_migrations(db_url)
     auth.ensure_bootstrap_admin(engine, os.environ.get("TRUCCA_ADMIN_USERNAME"),
-                                os.environ.get("TRUCCA_ADMIN_PASSWORD"), cfg.auth.min_password_length)
+                                os.environ.get("TRUCCA_ADMIN_PASSWORD"))
     check_output_dir(cfg.report.output_dir)
     templates = Environment(loader=FileSystemLoader(str(PKG_DIR / "templates")),
                             autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)

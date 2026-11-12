@@ -1,5 +1,12 @@
 # Lịch sử thay đổi
 
+## 1.0.1 – 2026-11-12
+
+- Tài khoản quản trị mặc định `admin` / `admin` khi DB chưa có người dùng và `.env` không đặt
+  `TRUCCA_ADMIN_USERNAME` / `TRUCCA_ADMIN_PASSWORD`; bắt buộc đổi mật khẩu ở lần đăng nhập đầu.
+- docker compose: mock Alertmanager mở cổng host `MOCK_AM_PORT` (mặc định 19093).
+- Logo đổi thành chữ **VTrucca** (chữ V màu vàng nhấn), favicon chữ V.
+
 ## 1.0.0 – 2026-11-12
 
 Phiên bản đầu tiên của TrucCa.

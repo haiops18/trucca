@@ -68,20 +68,27 @@ def audit(conn: Connection, user: CurrentUser | None, action: str, target: str |
 # --------------------------------------------------------------------------- bootstrap
 
 
-def ensure_bootstrap_admin(engine: Engine, username: str | None, password: str | None, min_len: int) -> None:
-    """Tạo admin đầu tiên từ biến môi trường khi DB chưa có user nào."""
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "admin"  # noqa: S105 - mặc định theo yêu cầu, bắt buộc đổi ở lần đăng nhập đầu
+
+
+def ensure_bootstrap_admin(engine: Engine, username: str | None, password: str | None) -> None:
+    """Tạo admin đầu tiên khi DB chưa có user nào.
+
+    Lấy từ TRUCCA_ADMIN_USERNAME / TRUCCA_ADMIN_PASSWORD; không đặt thì dùng mặc định admin / admin.
+    Tài khoản luôn bị bắt đổi mật khẩu ở lần đăng nhập đầu (mật khẩu mới phải theo chính sách mật khẩu).
+    """
+    username = (username or "").strip() or DEFAULT_ADMIN_USERNAME
+    password = password or DEFAULT_ADMIN_PASSWORD
     with engine.begin() as conn:
         count = conn.execute(select(func.count()).select_from(users)).scalar_one()
         if count:
             return
-        if not username or not password:
-            log.warning("no_users_and_no_bootstrap_admin",
-                        extra={"hint": "Đặt TRUCCA_ADMIN_USERNAME / TRUCCA_ADMIN_PASSWORD trong .env"})
-            return
         if not USERNAME_RE.match(username):
             raise ValueError("TRUCCA_ADMIN_USERNAME không hợp lệ (3-64 ký tự: chữ, số, . _ -)")
-        if len(password) < min_len:
-            raise ValueError(f"TRUCCA_ADMIN_PASSWORD phải có ít nhất {min_len} ký tự")
+        if password == DEFAULT_ADMIN_PASSWORD:
+            log.warning("bootstrap_admin_default_password",
+                        extra={"hint": "Đăng nhập và đổi mật khẩu ngay (hệ thống bắt buộc đổi ở lần đầu)"})
         now = utcnow()
         conn.execute(
             users.insert().values(

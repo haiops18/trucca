@@ -58,6 +58,8 @@ services:
     profiles: ["demo"]
     image: ${TRUCCA_IMAGE:-registry.local/noc/trucca}:${TRUCCA_VERSION:-latest}
     command: ["python", "-m", "mock.mock_alertmanager"]
+    ports:
+      - "${MOCK_AM_PORT:-19093}:9093"   # xem /api/v2/alerts, gọi /mock/fail để giả lập sự cố
     environment:
       MOCK_ALERTS: "180"
       MOCK_CHURN_SECONDS: "30"

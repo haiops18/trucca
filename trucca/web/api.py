@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,8 +20,10 @@ from ..alerts_query import (
     AlertFilter,
     age_buckets,
     fetch_active,
+    fetch_at,
     filter_age,
     filter_options,
+    format_start,
     group_rows,
     present_rows,
     severity_counts,
@@ -134,30 +136,58 @@ def _alert_filter(q: str, application: str, owner: str, alertname: str, severity
     return AlertFilter(q, application, owner, alertname, severity, sort, order)
 
 
+AT_PARAM = Query("", max_length=40, description="Thời điểm tra cứu (ISO, giờ theo timezone cấu hình). "
+                                                "Bỏ trống = cảnh báo đang diễn ra.")
+
+
+def parse_at(raw: str, tz: Any, now: datetime) -> datetime | None:
+    """Tham số `at` -> datetime UTC. Chuỗi không có múi giờ hiểu theo timezone trong config.
+
+    Bỏ trống -> None (xem cảnh báo đang diễn ra). Thời điểm ở tương lai -> lỗi 400."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        at = datetime.fromisoformat(raw.replace("Z", "+00:00").replace(" ", "T", 1))
+    except ValueError:
+        raise HTTPException(400, detail={"code": "invalid_at",
+                                         "message": "Thời điểm không hợp lệ (dạng 2026-11-12T08:30)"}) from None
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=tz)
+    at = at.astimezone(UTC)
+    if at > now + timedelta(minutes=1):
+        raise HTTPException(400, detail={"code": "future_at", "message": "Không thể chọn thời điểm ở tương lai"})
+    return at
+
+
 def _rows(request: Request, f: AlertFilter, group: bool, min_hours: float | None, max_hours: float | None,
-          with_buckets: bool = False) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+          with_buckets: bool = False, at: datetime | None = None,
+          ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Trả về (dòng hiển thị, nhóm tuổi). Nhóm tuổi tính trên tập đã lọc, TRƯỚC khi lọc theo tuổi.
 
-    Dùng chung cho bảng web và Excel, nên Excel xuất đúng thứ tự (sắp xếp/lọc) đang hiển thị trên web.
+    `at` = None: cảnh báo đang diễn ra; có `at`: cảnh báo đang diễn ra tại thời điểm đó (thời gian tồn tính tới `at`,
+    kèm trạng thái hiện tại). Dùng chung cho bảng web và Excel, nên Excel xuất đúng thứ tự đang hiển thị.
     """
     st = state(request)
-    now = utcnow()
+    ref = at or utcnow()
     f = f.normalized()
-    raw = fetch_active(st.engine, f)
-    buckets = age_buckets(raw, now, st.config.report.handover_threshold_hours) if with_buckets else []
-    raw = filter_age(raw, now, min_hours, max_hours)
+    raw = fetch_at(st.engine, f, at) if at else fetch_active(st.engine, f)
+    buckets = age_buckets(raw, ref, st.config.report.handover_threshold_hours) if with_buckets else []
+    raw = filter_age(raw, ref, min_hours, max_hours)
     missing = st.config.display.missing_label_text
     tz = st.config.tz
-    rows = (group_rows(raw, now, missing, tz, f.sort, f.order) if group
-            else present_rows(raw, now, missing, tz))
+    rows = (group_rows(raw, ref, missing, tz, f.sort, f.order) if group
+            else present_rows(raw, ref, missing, tz))
     return rows, buckets
 
 
 def _severity_counts(request: Request, f: AlertFilter, min_hours: float | None,
-                     max_hours: float | None) -> dict[str, int]:
+                     max_hours: float | None, at: datetime | None = None) -> dict[str, int]:
     """Đếm theo mức độ với các bộ lọc khác đang áp dụng (bỏ qua chính bộ lọc mức độ)."""
-    raw = fetch_active(state(request).engine, replace(f.normalized(), severity=""))
-    return severity_counts(filter_age(raw, utcnow(), min_hours, max_hours))
+    engine = state(request).engine
+    f2 = replace(f.normalized(), severity="")
+    raw = fetch_at(engine, f2, at) if at else fetch_active(engine, f2)
+    return severity_counts(filter_age(raw, at or utcnow(), min_hours, max_hours))
 
 
 @router.get("/api/alerts")
@@ -175,20 +205,24 @@ def list_alerts(
     max_hours: float | None = Query(None, gt=0),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=1000),
+    at: str = AT_PARAM,
     _: CurrentUser = Depends(api_user_ready),
 ) -> dict[str, Any]:
     st = state(request)
+    now = utcnow()
+    at_dt = parse_at(at, st.config.tz, now)
     f = _alert_filter(q, application, owner, alertname, severity, sort, order)
-    rows, buckets = _rows(request, f, group, min_hours, max_hours, with_buckets=True)
+    rows, buckets = _rows(request, f, group, min_hours, max_hours, with_buckets=True, at=at_dt)
     total = len(rows)
     pages = max(1, math.ceil(total / page_size))
     page = min(page, pages)
     items = strip_internal(rows[(page - 1) * page_size: page * page_size])
-    return {
+    out: dict[str, Any] = {
+        "mode": "history" if at_dt else "live",
         "items": items,
         "sort": f.normalized().sort,
         "order": f.normalized().order,
-        "severity_counts": _severity_counts(request, f, min_hours, max_hours),
+        "severity_counts": _severity_counts(request, f, min_hours, max_hours, at_dt),
         "total": total,
         "total_alerts": sum(r["count"] for r in rows),
         "page": page,
@@ -196,14 +230,28 @@ def list_alerts(
         "page_size": page_size,
         "age_buckets": buckets,
         "handover_threshold_hours": st.config.report.handover_threshold_hours,
-        "generated_at": utcnow().isoformat(),
+        "generated_at": now.isoformat(),
         "collector": st.collector.status.as_dict(),
     }
+    if at_dt:
+        since = reports.first_collection_time(st.engine)
+        out.update({
+            "at": at_dt.isoformat(),
+            "at_display": format_start(at_dt, st.config.tz),
+            # Dữ liệu lịch sử chỉ có từ khi TrucCa bắt đầu thu thập và trong retention_days
+            "data_since": since.isoformat() if since else None,
+            "data_since_display": format_start(since, st.config.tz) if since else "",
+            "before_data": since is None or at_dt < since,
+            "retention_days": st.config.retention_days,
+        })
+    return out
 
 
 @router.get("/api/alerts/filters")
-def alert_filters(request: Request, _: CurrentUser = Depends(api_user_ready)) -> dict[str, list[str]]:
-    return filter_options(state(request).engine)
+def alert_filters(request: Request, at: str = AT_PARAM,
+                  _: CurrentUser = Depends(api_user_ready)) -> dict[str, list[str]]:
+    st = state(request)
+    return filter_options(st.engine, parse_at(at, st.config.tz, utcnow()))
 
 
 @router.get("/api/alerts/export.xlsx")
@@ -219,16 +267,21 @@ def export_alerts(
     group: bool = False,
     min_hours: float | None = Query(None, ge=0),
     max_hours: float | None = Query(None, gt=0),
+    at: str = AT_PARAM,
     user: CurrentUser = Depends(api_user_ready),
 ) -> Response:
     st = state(request)
-    f = _alert_filter(q, application, owner, alertname, severity, sort, order)
-    rows, _ = _rows(request, f, group, min_hours, max_hours)
     now = utcnow()
-    content = build_alerts_xlsx(rows, now, tz=st.config.tz)
-    local = now.astimezone(st.config.tz)
-    filename = f"canh-bao-dang-dien-ra_{local:%Y%m%d_%H%M}.xlsx"
-    log.info("alerts_exported", extra={"user": user.username, "rows": len(rows)})
+    at_dt = parse_at(at, st.config.tz, now)
+    f = _alert_filter(q, application, owner, alertname, severity, sort, order)
+    rows, _ = _rows(request, f, group, min_hours, max_hours, at=at_dt)
+    content = build_alerts_xlsx(rows, now, tz=st.config.tz, at=at_dt)
+    if at_dt:
+        filename = f"canh-bao-tai-thoi-diem_{at_dt.astimezone(st.config.tz):%Y%m%d_%H%M}.xlsx"
+    else:
+        filename = f"canh-bao-dang-dien-ra_{now.astimezone(st.config.tz):%Y%m%d_%H%M}.xlsx"
+    log.info("alerts_exported", extra={"user": user.username, "rows": len(rows),
+                                       "at": at_dt.isoformat() if at_dt else None})
     return Response(
         content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

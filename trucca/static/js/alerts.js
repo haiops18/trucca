@@ -12,11 +12,15 @@
   // Mặc định: cảnh báo bắt đầu mới nhất ở trên cùng
   const DEFAULT_SORT = "starts_at", DEFAULT_ORDER = "desc";
   const DESC_FIRST = new Set(["starts_at", "duration", "severity"]);
-  const COLS = 7;
+  const pad = (n) => String(n).padStart(2, "0");
+  // Date -> giá trị cho <input type="datetime-local" step="1"> (giờ máy người dùng)
+  const toInputValue = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" +
+    pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
 
   const state = {
     q: "", application: "", owner: "", alertname: "", severity: "",
     min_hours: null, max_hours: null, group: false,
+    at: "", // trống = đang diễn ra; có giá trị = tra cứu cảnh báo tại thời điểm đó
     sort: DEFAULT_SORT, order: DEFAULT_ORDER, page: 1, page_size: 50,
   };
   let refreshSeconds = 30;
@@ -31,6 +35,7 @@
     FILTER_KEYS.forEach((k) => { if (p.has(k)) state[k] = p.get(k); });
     ["min_hours", "max_hours"].forEach((k) => { if (p.has(k) && p.get(k) !== "") state[k] = Number(p.get(k)); });
     if (p.has("group")) state.group = p.get("group") === "1";
+    if (p.has("at")) state.at = p.get("at");
     if (p.has("sort")) state.sort = p.get("sort");
     if (p.has("order")) state.order = p.get("order") === "asc" ? "asc" : "desc";
     if (p.has("page")) state.page = Math.max(1, parseInt(p.get("page"), 10) || 1);
@@ -43,6 +48,7 @@
     if (state.min_hours != null) p.set("min_hours", state.min_hours);
     if (state.max_hours != null) p.set("max_hours", state.max_hours);
     if (state.group) p.set("group", forExport ? "true" : "1");
+    if (state.at) p.set("at", state.at);
     p.set("sort", state.sort); p.set("order", state.order);
     if (!forExport) { p.set("page", state.page); p.set("page_size", state.page_size); }
     return p.toString();
@@ -80,8 +86,42 @@
         '<td class="sum">' + TC.esc(r.summary) + "</td>" +
         '<td class="start" data-label="Bắt đầu"><time datetime="' + TC.esc(r.starts_at) + '">' + TC.esc(r.starts_at_display) + "</time></td>" +
         '<td class="dur" data-label="Thời gian tồn">' + TC.esc(r.duration) + "</td>" +
-        cell(r.owner, "", "Người xử lý") + cell(r.application, "", "Hệ thống") + "</tr>";
+        cell(r.owner, "", "Người xử lý") + cell(r.application, "", "Hệ thống") + statusCell(r) + "</tr>";
     }).join("");
+  }
+
+  const isHistory = () => !!state.at;
+  const cols = () => (isHistory() ? 8 : 7);
+
+  function statusCell(r) {
+    if (!isHistory()) return "";
+    if (r.status === "resolved") {
+      return '<td class="status" data-label="Trạng thái"><span class="st st-resolved">Đã clear</span><small>lúc ' +
+        TC.esc(r.resolved_at_display) + " · tồn " + TC.esc(r.total_duration) + "</small></td>";
+    }
+    return '<td class="status" data-label="Trạng thái"><span class="st st-active">Đang diễn ra</span><small>chưa clear tới nay</small></td>';
+  }
+
+  function renderMode(data) {
+    const hist = data.mode === "history";
+    $("th-status").hidden = !hist;
+    $("history-banner").hidden = !hist;
+    document.querySelector(".timebar").classList.toggle("on", hist);
+    // Dữ liệu tại một thời điểm trong quá khứ không đổi -> tắt tự làm mới
+    $("refresh-sel").disabled = hist;
+    $("refresh-sel").title = hist ? "Không tự làm mới khi xem thời điểm trong quá khứ" : "";
+    $("count-label").textContent = hist ? "cảnh báo đang diễn ra tại " + data.at_display : "cảnh báo đang diễn ra";
+    if (hist) {
+      $("history-at").textContent = data.at_display;
+      $("history-at").setAttribute("datetime", data.at);
+      let note = 'Danh sách là các cảnh báo đang diễn ra vào lúc đó. "Thời gian tồn" tính tới thời điểm đã chọn; cột "Trạng thái" cho biết hiện giờ cảnh báo đã clear hay vẫn còn.';
+      if (data.before_data) {
+        note = data.data_since_display
+          ? "Thời điểm này trước khi TrucCa bắt đầu lưu dữ liệu (" + data.data_since_display + "), kết quả có thể thiếu."
+          : "TrucCa chưa có dữ liệu lịch sử.";
+      }
+      $("history-text").textContent = note + " Dữ liệu được giữ " + data.retention_days + " ngày.";
+    }
   }
 
   function sevLabel(v) { return SEV_LABELS[v] || v; }
@@ -106,7 +146,7 @@
   }
 
   function renderSkeleton() {
-    const row = "<tr class=\"skeleton\">" + "<td><div></div></td>".repeat(COLS) + "</tr>";
+    const row = "<tr class=\"skeleton\">" + "<td><div></div></td>".repeat(cols()) + "</tr>";
     $("rows").innerHTML = row.repeat(8);
   }
 
@@ -115,9 +155,14 @@
     const filtered = FILTER_KEYS.some((k) => state[k]) || state.min_hours != null || state.max_hours != null;
     if (data.total > 0) { box.hidden = true; return; }
     box.hidden = false;
-    box.innerHTML = filtered
-      ? "<h3>Không có cảnh báo khớp bộ lọc</h3><p>Thử bỏ bớt điều kiện lọc hoặc từ khoá tìm kiếm.</p><button type=\"button\" class=\"btn\" id=\"empty-clear\">Xoá bộ lọc</button>"
-      : "<h3>Không có cảnh báo đang diễn ra</h3><p>Danh sách sẽ tự cập nhật khi Alertmanager có cảnh báo mới.</p>";
+    if (filtered) {
+      box.innerHTML = "<h3>Không có cảnh báo khớp bộ lọc</h3><p>Thử bỏ bớt điều kiện lọc hoặc từ khoá tìm kiếm.</p><button type=\"button\" class=\"btn\" id=\"empty-clear\">Xoá bộ lọc</button>";
+    } else if (data.mode === "history") {
+      box.innerHTML = "<h3>Không có cảnh báo nào đang diễn ra lúc " + TC.esc(data.at_display) + "</h3><p>" +
+        (data.before_data ? "TrucCa chưa lưu dữ liệu ở thời điểm này." : "Thử chọn thời điểm khác.") + "</p>";
+    } else {
+      box.innerHTML = "<h3>Không có cảnh báo đang diễn ra</h3><p>Danh sách sẽ tự cập nhật khi Alertmanager có cảnh báo mới.</p>";
+    }
     const btn = $("empty-clear");
     if (btn) btn.addEventListener("click", clearFilters);
   }
@@ -200,7 +245,7 @@
   // ---------- Tải dữ liệu ----------
   async function loadFilters() {
     try {
-      const f = await TC.api("/api/alerts/filters");
+      const f = await TC.api("/api/alerts/filters" + (state.at ? "?at=" + encodeURIComponent(state.at) : ""));
       ["application", "owner", "alertname"].forEach((k) => fillSelect($("f-" + k), f[k] || [], state[k]));
       fillSelect($("f-severity"), SEV_ORDER, state.severity ? state.severity.toLowerCase() : "", sevLabel);
     } catch (e) { /* lỗi đã hiện ở banner chính khi load() */ }
@@ -223,6 +268,7 @@
       $("updated-at").textContent = TC.fmtTime(data.generated_at);
       $("updated-at").setAttribute("datetime", data.generated_at);
       if (data.sort) { state.sort = data.sort; state.order = data.order; renderSortHeaders(); }
+      renderMode(data);
       renderAgeBar(data);
       renderSevCounts(data.severity_counts);
       renderRows(data.items);
@@ -250,7 +296,8 @@
 
   function schedule() {
     clearInterval(timer);
-    if (refreshSeconds > 0) timer = setInterval(() => { if (!document.hidden) load({ withFilters: true }); }, refreshSeconds * 1000);
+    // Xem lịch sử: dữ liệu tại thời điểm đã chọn không đổi theo thời gian -> không tự làm mới
+    if (refreshSeconds > 0) timer = setInterval(() => { if (!document.hidden && !isHistory()) load({ withFilters: true }); }, refreshSeconds * 1000);
   }
 
   function clearFilters() {
@@ -314,7 +361,26 @@
       state.page = 1; load();
     });
     $("export-btn").addEventListener("click", () => TC.toast("Đang chuẩn bị file Excel…"));
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && refreshSeconds > 0) load(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && refreshSeconds > 0 && !isHistory()) load(); });
+    // ---- Tra cứu theo thời điểm
+    const atInput = $("f-at");
+    function setAt(value) {
+      state.at = value || "";
+      atInput.value = state.at;
+      state.page = 1;
+      load({ withFilters: true });
+    }
+    atInput.addEventListener("focus", () => { atInput.max = toInputValue(new Date()); });
+    atInput.addEventListener("change", () => {
+      const v = atInput.value;
+      if (v && new Date(v) > new Date()) { TC.toast("Không thể chọn thời điểm ở tương lai."); atInput.value = state.at; return; }
+      setAt(v && v.length === 16 ? v + ":00" : v);
+    });
+    document.querySelectorAll(".timebar [data-ago]").forEach((b) => b.addEventListener("click", () => {
+      setAt(toInputValue(new Date(Date.now() - Number(b.dataset.ago) * 3600 * 1000)));
+    }));
+    $("at-clear").addEventListener("click", () => setAt(""));
+    $("history-exit").addEventListener("click", () => setAt(""));
   }
 
   async function init() {
@@ -337,6 +403,8 @@
     if (![...ps.options].some((o) => Number(o.value) === state.page_size)) ps.insertAdjacentHTML("beforeend", "<option>" + state.page_size + "</option>");
     ps.value = String(state.page_size);
     $("f-q").value = state.q;
+    $("f-at").value = state.at;
+    $("f-at").max = toInputValue(new Date());
     $("f-group").checked = state.group;
     bind();
     await Promise.all([load(), loadFilters()]);

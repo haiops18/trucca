@@ -11,11 +11,18 @@
     <div><strong>Không tải được danh sách cảnh báo</strong><span id="load-banner-text"></span></div>
   </div>
 
+  <div class="banner info" id="history-banner" role="status" hidden>
+    <span class="dot"></span>
+    <div class="grow"><strong>Đang xem cảnh báo tại thời điểm <time id="history-at"></time></strong>
+      <span id="history-text">Danh sách là các cảnh báo đang diễn ra vào lúc đó. "Thời gian tồn" tính tới thời điểm đã chọn; cột "Trạng thái" cho biết hiện giờ cảnh báo đã clear hay vẫn còn.</span></div>
+    <button type="button" class="btn btn-sm" id="history-exit">Về hiện tại</button>
+  </div>
+
   <section class="panel overview" aria-labelledby="ov-title">
     <div>
       <h1 id="ov-title" class="visually-hidden">Cảnh báo đang diễn ra</h1>
       <div class="count" id="total-count" aria-live="polite">–</div>
-      <div class="count-label">cảnh báo đang diễn ra</div>
+      <div class="count-label" id="count-label">cảnh báo đang diễn ra</div>
       <div class="sevcounts" id="sev-counts" role="group" aria-label="Lọc theo mức độ"></div>
       <div class="meta">
         <span class="conn" id="conn-pill">Đang kết nối…</span>
@@ -31,6 +38,17 @@
   </section>
 
   <section class="panel" style="margin-top:16px" aria-label="Danh sách cảnh báo">
+    <div class="timebar" role="group" aria-labelledby="at-label">
+      <label id="at-label" for="f-at">Xem tại thời điểm</label>
+      <input id="f-at" type="datetime-local" step="1" aria-describedby="at-hint">
+      <div class="presets" aria-label="Chọn nhanh">
+        <button type="button" class="btn btn-sm" data-ago="1">1 giờ trước</button>
+        <button type="button" class="btn btn-sm" data-ago="6">6 giờ trước</button>
+        <button type="button" class="btn btn-sm" data-ago="24">24 giờ trước</button>
+        <button type="button" class="btn btn-sm" id="at-clear">Hiện tại</button>
+      </div>
+      <span class="hint" id="at-hint">Để trống: cảnh báo đang diễn ra. Chọn thời điểm: tra cứu cảnh báo cũ (giờ hệ thống).</span>
+    </div>
     <form class="toolbar" id="filters" role="search">
       <div class="field field-q">
         <label for="f-q">Tìm kiếm</label>
@@ -69,6 +87,7 @@
             <th scope="col" data-sort="duration"><button type="button">Thời gian tồn <span class="arrow" aria-hidden="true">▲▼</span></button></th>
             <th scope="col" data-sort="owner"><button type="button">Người xử lý <span class="arrow" aria-hidden="true">▲▼</span></button></th>
             <th scope="col" data-sort="application"><button type="button">Hệ thống <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+            <th scope="col" id="th-status" hidden>Trạng thái</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>

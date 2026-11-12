@@ -7,10 +7,10 @@ from datetime import datetime, tzinfo
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, func, literal, or_, select
+from sqlalchemy import ColumnElement, Select, Table, and_, case, func, literal, or_, select
 from sqlalchemy.engine import Engine
 
-from .db import alerts
+from .db import alerts, occurrences
 from .severity import LABELS as SEVERITY_LABELS
 from .severity import LEVELS as SEVERITY_LEVELS
 from .severity import RANK as SEVERITY_RANK
@@ -52,17 +52,12 @@ def _escape_like(s: str) -> str:
 MISSING = "__missing__"
 
 
-def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
-    f = f.normalized()
-    stmt = select(
-        alerts.c.fingerprint, alerts.c.alertname, alerts.c.summary, alerts.c.severity,
-        alerts.c.severity_normalized, alerts.c.owner, alerts.c.application, alerts.c.instance,
-        alerts.c.starts_at, alerts.c.am_state,
-    ).where(alerts.c.status == "active")
+def _apply_filters(stmt: Select, t: Table, f: AlertFilter) -> Select:
+    """Bộ lọc + sắp xếp dùng chung cho bảng `alerts` (đang diễn ra) và `alert_occurrences` (lịch sử)."""
     for col, val in (
-        (alerts.c.application, f.application),
-        (alerts.c.owner, f.owner),
-        (alerts.c.alertname, f.alertname),
+        (t.c.application, f.application),
+        (t.c.owner, f.owner),
+        (t.c.alertname, f.alertname),
     ):
         if val == MISSING:
             stmt = stmt.where(col.is_(None))
@@ -72,44 +67,91 @@ def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
         level = parse_level(f.severity)
         if level:
             # severity=warning khớp Warning / WARNING / warning ... (đã chuẩn hoá khi thu thập)
-            stmt = stmt.where(alerts.c.severity_normalized == level)
+            stmt = stmt.where(t.c.severity_normalized == level)
         elif f.severity == MISSING:
-            stmt = stmt.where(alerts.c.severity.is_(None))
+            stmt = stmt.where(t.c.severity.is_(None))
         else:
             # Tương thích ngược: lọc theo giá trị gốc, không phân biệt hoa thường
-            stmt = stmt.where(func.lower(func.btrim(alerts.c.severity)) == clean(f.severity))
+            stmt = stmt.where(func.lower(func.btrim(t.c.severity)) == clean(f.severity))
     if f.q:
         pat = f"%{_escape_like(f.q)}%"
         stmt = stmt.where(
             or_(
-                alerts.c.alertname.ilike(pat, escape="\\"),
-                alerts.c.summary.ilike(pat, escape="\\"),
-                alerts.c.owner.ilike(pat, escape="\\"),
-                alerts.c.application.ilike(pat, escape="\\"),
-                alerts.c.instance.ilike(pat, escape="\\"),
+                t.c.alertname.ilike(pat, escape="\\"),
+                t.c.summary.ilike(pat, escape="\\"),
+                t.c.owner.ilike(pat, escape="\\"),
+                t.c.application.ilike(pat, escape="\\"),
+                t.c.instance.ilike(pat, escape="\\"),
             )
         )
     # Sắp xếp phụ cố định để thứ tự ổn định giữa các lần refresh
     if f.sort == "duration":
         # thời gian tồn giảm dần <=> starts_at tăng dần
-        primary = alerts.c.starts_at.asc() if f.order == "desc" else alerts.c.starts_at.desc()
+        primary = t.c.starts_at.asc() if f.order == "desc" else t.c.starts_at.desc()
     elif f.sort == "starts_at":
-        primary = alerts.c.starts_at.desc() if f.order == "desc" else alerts.c.starts_at.asc()
+        primary = t.c.starts_at.desc() if f.order == "desc" else t.c.starts_at.asc()
     elif f.sort == "severity":
-        rank = case(*[(alerts.c.severity_normalized == lv, literal(r)) for lv, r in SEVERITY_RANK.items()],
+        rank = case(*[(t.c.severity_normalized == lv, literal(r)) for lv, r in SEVERITY_RANK.items()],
                     else_=literal(0))
         primary = rank.desc() if f.order == "desc" else rank.asc()
     else:
-        col = alerts.c[f.sort]
+        col = t.c[f.sort]
         primary = (col.asc() if f.order == "asc" else col.desc()).nulls_last()
-    stmt = stmt.order_by(primary, alerts.c.starts_at.asc(), alerts.c.fingerprint)
+    return stmt.order_by(primary, t.c.starts_at.asc(), t.c.fingerprint)
+
+
+def fetch_active(engine: Engine, f: AlertFilter) -> list[dict[str, Any]]:
+    """Cảnh báo đang diễn ra (bảng alerts)."""
+    f = f.normalized()
+    stmt = select(
+        alerts.c.fingerprint, alerts.c.alertname, alerts.c.summary, alerts.c.severity,
+        alerts.c.severity_normalized, alerts.c.owner, alerts.c.application, alerts.c.instance,
+        alerts.c.starts_at, alerts.c.am_state,
+    ).where(alerts.c.status == "active")
     with engine.connect() as conn:
-        return [dict(r._mapping) for r in conn.execute(stmt)]
+        return [dict(r._mapping) for r in conn.execute(_apply_filters(stmt, alerts, f))]
+
+
+def active_at_condition(at: datetime) -> ColumnElement[bool]:
+    """Occurrence đang diễn ra tại thời điểm `at`: bắt đầu <= at và (chưa clear hoặc clear SAU at).
+
+    Bỏ các occurrence bị đóng vì không còn khớp filter cấu hình (giống báo cáo ca)."""
+    o = occurrences.c
+    return and_(
+        o.starts_at <= at,
+        or_(o.resolved_at.is_(None), o.resolved_at > at),
+        or_(o.resolve_source.is_(None), o.resolve_source != "filtered_out"),
+    )
+
+
+def fetch_at(engine: Engine, f: AlertFilter, at: datetime) -> list[dict[str, Any]]:
+    """Cảnh báo đang diễn ra TẠI thời điểm `at` (tra cứu lịch sử, bảng alert_occurrences) kèm thời điểm clear."""
+    f = f.normalized()
+    o = occurrences.c
+    stmt = select(
+        o.fingerprint, o.alertname, o.summary, o.severity, o.severity_normalized, o.owner, o.application,
+        o.instance, o.starts_at, o.resolved_at, literal(None).label("am_state"),
+    ).where(active_at_condition(at))
+    with engine.connect() as conn:
+        return [dict(r._mapping) for r in conn.execute(_apply_filters(stmt, occurrences, f))]
 
 
 def format_start(ts: datetime, tz: tzinfo | None) -> str:
     """Thời gian bắt đầu hiển thị: dd/MM/yyyy HH:mm:ss theo timezone cấu hình."""
     return ts.astimezone(tz or _DEFAULT_TZ).strftime(DISPLAY_TIME_FORMAT)
+
+
+STATUS_LABELS = {"active": "Đang diễn ra", "resolved": "Đã clear"}
+
+
+def _status_fields(starts_at: datetime, resolved_at: datetime | None, tz: tzinfo | None) -> dict[str, Any]:
+    """Trạng thái HIỆN TẠI của một cảnh báo xem ở chế độ lịch sử."""
+    if resolved_at is None:
+        return {"status": "active", "status_label": STATUS_LABELS["active"], "resolved_at": None,
+                "resolved_at_display": "", "resolved_at_dt": None, "total_duration": ""}
+    return {"status": "resolved", "status_label": STATUS_LABELS["resolved"], "resolved_at": resolved_at.isoformat(),
+            "resolved_at_display": format_start(resolved_at, tz), "resolved_at_dt": resolved_at,
+            "total_duration": format_duration(duration_seconds(starts_at, resolved_at, resolved_at))}
 
 
 def _severity_fields(level: str, raw: str) -> dict[str, str]:
@@ -138,6 +180,7 @@ def present_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str,
                 "instance": r["instance"] or "",
                 "starts_at": r["starts_at"].isoformat(),
                 "starts_at_dt": r["starts_at"],
+                **(_status_fields(r["starts_at"], r["resolved_at"], tz) if "resolved_at" in r else {}),
                 "silenced": r["am_state"] == "suppressed",
                 "count": 1,
             }
@@ -168,8 +211,14 @@ def group_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str, tz:
     for r in rows:
         groups.setdefault((r["alertname"], r["application"]), []).append(r)
     out = []
+    history = bool(rows) and "resolved_at" in rows[0]
     for (alertname, app), members in groups.items():
         oldest = min(m["starts_at"] for m in members)
+        status: dict[str, Any] = {}
+        if history:
+            # Nhóm còn ít nhất 1 cảnh báo chưa clear -> Đang diễn ra; ngược lại lấy thời điểm clear muộn nhất
+            pending = any(m["resolved_at"] is None for m in members)
+            status = _status_fields(oldest, None if pending else max(m["resolved_at"] for m in members), tz)
         secs = duration_seconds(oldest, None, now)
         owners = sorted({m["owner"] for m in members if m["owner"]})
         sev = sorted({m["severity"] for m in members if m["severity"]})
@@ -191,6 +240,7 @@ def group_rows(rows: list[dict[str, Any]], now: datetime, missing_text: str, tz:
                 "instance": "",
                 "starts_at": oldest.isoformat(),
                 "starts_at_dt": oldest,
+                **status,
                 "silenced": all(m["am_state"] == "suppressed" for m in members),
                 "count": len(members),
             }
@@ -214,7 +264,7 @@ def severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 def strip_internal(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Bỏ các trường nội bộ (datetime) trước khi trả JSON."""
-    return [{k: v for k, v in r.items() if k != "starts_at_dt"} for r in rows]
+    return [{k: v for k, v in r.items() if k not in ("starts_at_dt", "resolved_at_dt")} for r in rows]
 
 
 def age_edges(handover_hours: float) -> list[float]:
@@ -265,20 +315,16 @@ def filter_age(rows: list[dict[str, Any]], now: datetime, min_hours: float | Non
     return out
 
 
-def filter_options(engine: Engine) -> dict[str, list[str]]:
+def filter_options(engine: Engine, at: datetime | None = None) -> dict[str, list[str]]:
+    """Giá trị cho các dropdown lọc: từ cảnh báo đang diễn ra, hoặc đang diễn ra tại thời điểm `at`."""
+    t, cond = (occurrences, active_at_condition(at)) if at is not None else (alerts, alerts.c.status == "active")
     out: dict[str, list[str]] = {}
     with engine.connect() as conn:
-        present = {r[0] for r in conn.execute(
-            select(alerts.c.severity_normalized).where(alerts.c.status == "active").distinct())}
+        present = {r[0] for r in conn.execute(select(t.c.severity_normalized).where(cond).distinct())}
         # Mức độ: luôn là các nhóm chuẩn (critical, warning, other) theo thứ tự cố định
         out["severity"] = [lv for lv in SEVERITY_LEVELS if lv in present]
         for name in ("application", "owner", "alertname"):
-            col = alerts.c[name]
-            stmt = (
-                select(col, func.count())
-                .where(alerts.c.status == "active")
-                .group_by(col)
-                .order_by(col.asc().nulls_last())
-            )
+            col = t.c[name]
+            stmt = select(col, func.count()).where(cond).group_by(col).order_by(col.asc().nulls_last())
             out[name] = [r[0] if r[0] is not None else MISSING for r in conn.execute(stmt)]
     return out

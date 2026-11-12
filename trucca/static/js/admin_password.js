@@ -13,7 +13,7 @@
     const btn = form.querySelector("button[type=submit]");
     TC.busy(btn, true, "Đang lưu…");
     try {
-      const r = await TC.api("/api/account/password", { method: "POST", body: { current_password: cur, new_password: nw } });
+      const r = await TC.api("/api/admin/password", { method: "POST", body: { current_password: cur, new_password: nw } });
       TC.toast("Đã đổi mật khẩu.");
       setTimeout(() => { location.href = r.redirect; }, 600);
     } catch (e) { err.textContent = e.message; }

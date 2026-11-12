@@ -19,14 +19,11 @@
       {% if not user.must_change_password %}
       <a href="{{ base }}/" {% if active == 'alerts' %}aria-current="page"{% endif %}>Cảnh báo</a>
       <a href="{{ base }}/reports" {% if active == 'reports' %}aria-current="page"{% endif %}>Báo cáo ca</a>
-      {% if user.is_admin %}
-      <a href="{{ base }}/admin/users" {% if active == 'users' %}aria-current="page"{% endif %}>Người dùng</a>
-      <a href="{{ base }}/admin/system" {% if active == 'system' %}aria-current="page"{% endif %}>Hệ thống</a>
       {% endif %}
-      {% endif %}
+      <a href="{{ base }}/admin" data-nav="admin" {% if active == 'admin' %}aria-current="page"{% endif %}>Quản trị</a>
     </nav>
     <div class="userbox">
-      <a class="who" href="{{ base }}/account" style="color:inherit" {% if active == 'account' %}aria-current="page"{% endif %}>{{ user.full_name or user.username }}</a>
+      <a class="who" href="{{ base }}/admin/password" style="color:inherit" title="Đổi mật khẩu">{{ user.full_name or user.username }}</a>
       <span class="role-tag">{{ 'Quản trị' if user.is_admin else 'Xem' }}</span>
       <button type="button" class="btn-ghost-dark" id="theme-toggle" aria-label="Đổi giao diện sáng/tối">◐</button>
       <button type="button" class="btn-ghost-dark" id="logout-btn">Đăng xuất</button>

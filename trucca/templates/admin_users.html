@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Người dùng{% endblock %}
+{% block title %}Người dùng – Quản trị{% endblock %}
 {% block main %}
 <div class="page">
+  {% include "_admin_nav.html" %}
   <div class="page-head">
     <div><h1>Người dùng</h1><p>Vai trò <b>Xem</b>: xem cảnh báo, xuất Excel, tải báo cáo. <b>Quản trị</b>: thêm quản lý người dùng và hệ thống.</p></div>
     <button class="btn btn-primary" type="button" id="new-user">Thêm người dùng</button>

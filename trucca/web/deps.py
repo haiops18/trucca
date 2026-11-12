@@ -11,6 +11,8 @@ from ..auth.service import CurrentUser, session_ttl, session_user
 from ..config import AuthConfig
 
 SESSION_COOKIE = "trucca_session"
+# Trang đổi mật khẩu (trong module Quản trị) - nơi người dùng bị chuyển tới khi phải đổi mật khẩu
+PASSWORD_PAGE = "/admin/password"  # noqa: S105 - đường dẫn trang, không phải mật khẩu
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
@@ -78,8 +80,8 @@ def api_admin(user: CurrentUser = Depends(api_user_ready)) -> CurrentUser:
 def page_user(request: Request, user: CurrentUser | None = Depends(optional_user)) -> CurrentUser:
     if user is None:
         raise PageRedirect("/login")
-    if user.must_change_password and request.url.path.rstrip("/") != f"{state(request).base}/account":
-        raise PageRedirect("/account")
+    if user.must_change_password and request.url.path.rstrip("/") != f"{state(request).base}{PASSWORD_PAGE}":
+        raise PageRedirect(PASSWORD_PAGE)
     return user
 
 

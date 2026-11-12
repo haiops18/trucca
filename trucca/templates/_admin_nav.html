@@ -1,0 +1,11 @@
+{# Phần đầu dùng chung cho module Quản trị: breadcrumb + các mục con (chỉ hiện mục người dùng được phép). #}
+<nav class="crumbs" aria-label="Vị trí">
+  <ol><li><a href="{{ base }}/admin">Quản trị</a></li><li aria-current="page">{{ section_label }}</li></ol>
+</nav>
+{% if sections | length > 1 %}
+<nav class="subnav" aria-label="Các mục quản trị">
+  {% for s in sections %}
+  <a href="{{ base }}{{ s.path }}" data-section="{{ s.key }}" {% if s.key == section %}aria-current="page"{% endif %}>{{ s.label }}</a>
+  {% endfor %}
+</nav>
+{% endif %}

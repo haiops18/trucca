@@ -30,7 +30,7 @@
     if (!resp.ok) {
       const err = (data && data.error) || {};
       if (resp.status === 401 && !opts.noRedirect) { location.href = base + "/login"; }
-      if (resp.status === 403 && err.code === "must_change_password") { location.href = base + "/account"; }
+      if (resp.status === 403 && err.code === "must_change_password") { location.href = base + "/admin/password"; }
       let msg = err.message || (resp.status >= 500 ? "Máy chủ gặp lỗi (HTTP " + resp.status + "). Thử lại sau ít phút." : "Yêu cầu không thành công (HTTP " + resp.status + ").");
       throw new ApiError(msg, resp.status, err.code || "http");
     }

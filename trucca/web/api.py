@@ -34,7 +34,16 @@ from ..export_xlsx import build_alerts_xlsx
 from ..reports import service as reports
 from ..reports.service import ReportError
 from ..timeutil import current_shift, utcnow
-from .deps import SESSION_COOKIE, api_admin, api_user, api_user_ready, client_ip, set_session_cookie, state
+from .deps import (
+    PASSWORD_PAGE,
+    SESSION_COOKIE,
+    api_admin,
+    api_user,
+    api_user_ready,
+    client_ip,
+    set_session_cookie,
+    state,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,7 +76,7 @@ def login(body: LoginBody, request: Request) -> JSONResponse:
     except AuthError as e:
         raise _auth_error(e) from e
     resp = JSONResponse({"user": _user_json(user),
-                         "redirect": f"{st.base}/account" if user.must_change_password else f"{st.base}/"})
+                         "redirect": f"{st.base}{PASSWORD_PAGE}" if user.must_change_password else f"{st.base}/"})
     set_session_cookie(resp, token, st.config.auth, st.base or "/", body.remember)
     return resp
 
@@ -91,8 +100,23 @@ class PasswordBody(BaseModel):
     new_password: str = Field(max_length=256)
 
 
-@router.post("/api/account/password")
+@router.post("/api/admin/password")
 def change_password(body: PasswordBody, request: Request, user: CurrentUser = Depends(api_user)) -> dict[str, Any]:
+    """Module Quản trị > Đổi mật khẩu: MỌI người dùng đã đăng nhập đổi mật khẩu của CHÍNH MÌNH
+    (yêu cầu mật khẩu hiện tại, kiểm tra độ mạnh; không nhận user_id nên không đổi được của người khác)."""
+    return _change_own_password(body, request, user)
+
+
+@router.post("/api/account/password", deprecated=True)
+def change_password_legacy(body: PasswordBody, request: Request, response: Response,
+                           user: CurrentUser = Depends(api_user)) -> dict[str, Any]:
+    """[Deprecated] Giữ cho client cũ; dùng POST /api/admin/password. Hành vi giống hệt."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = f'<{state(request).base}/api/admin/password>; rel="successor-version"'
+    return _change_own_password(body, request, user)
+
+
+def _change_own_password(body: PasswordBody, request: Request, user: CurrentUser) -> dict[str, Any]:
     st = state(request)
     try:
         auth.change_own_password(st.engine, st.config.auth, user, body.current_password, body.new_password,

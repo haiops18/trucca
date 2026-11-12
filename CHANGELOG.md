@@ -9,6 +9,11 @@ Phiên bản major vì thay đổi hành vi mặc định (sắp xếp theo th�
 địa chỉ trang đổi mật khẩu). URL và API cũ vẫn được giữ tương thích (redirect / deprecated).
 
 ### Added
+- **`install.sh`**: cài đặt / nâng cấp một lệnh – hỏi địa chỉ Alertmanager, thư mục lưu cấu hình + dữ liệu, cổng;
+  tự `docker load` file image (kiểm tra SHA-256), tạo cấu hình, sinh mật khẩu PostgreSQL, chạy docker compose.
+- `scripts/package-image.sh`: đóng gói image thành `trucca-image-<version>.tar.gz` (+ `.sha256`) để phát hành.
+- `docker-compose.yml`: thư mục cấu hình / dữ liệu / file env cấu hình được qua `TRUCCA_CONFIG_DIR`,
+  `TRUCCA_DATA_DIR`, `TRUCCA_ENV_FILE` (mặc định giữ nguyên `./config`, `./data`, `.env`).
 - Cột **"Thời gian bắt đầu"** (`startsAt`, `dd/MM/yyyy HH:mm:ss` theo `timezone`) ngay trước "Thời gian tồn" trên
   bảng cảnh báo và trong Excel. Trong Excel là kiểu ngày giờ thật, định dạng `dd/mm/yyyy hh:mm:ss`.
 - Excel thêm cột "Mức độ" (Critical / Warning / Khác) sau "Hệ thống".

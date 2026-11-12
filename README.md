@@ -6,7 +6,8 @@ Có đăng nhập và phân quyền **Xem / Quản trị**. Chạy bằng `docke
 
 - [Kiến trúc](#kiến-trúc)
 - [Chạy nhanh (demo với mock Alertmanager)](#chạy-nhanh-demo-với-mock-alertmanager)
-- [Triển khai thật](#triển-khai-thật)
+- [Cài đặt bằng script](#cài-đặt-bằng-script-khuyến-nghị)
+- [Triển khai thủ công](#triển-khai-thủ-công)
 - [Cấu hình](#cấu-hình)
 - [Trang cảnh báo và Excel](#trang-cảnh-báo-và-excel)
 - [Mức độ (severity)](#mức-độ-severity)
@@ -63,6 +64,8 @@ migrations/             Alembic
 mock/                   mock Alertmanager + script sinh lịch sử giả
 tests/                  unit test; tests/integration: test tích hợp với PostgreSQL thật
 config/config.example.yml, .env.example, Dockerfile, docker-compose.yml
+install.sh              cài đặt / nâng cấp bằng script
+scripts/package-image.sh đóng gói image thành file phát hành
 ```
 
 ### Bảng dữ liệu chính
@@ -106,7 +109,47 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 
 ---
 
-## Triển khai thật
+## Cài đặt bằng script (khuyến nghị)
+
+Trên máy chủ chỉ cần Docker (có `docker compose` v2) và `git`:
+
+```bash
+git clone https://github.com/haiops18/trucca.git && cd trucca
+# Tải file image ở trang Releases (vd v2.0.0): trucca-image-2.0.0.tar.gz (+ .sha256), đặt cạnh install.sh
+#   hoặc, nếu đã đăng nhập gh:  gh release download v2.0.0 -p 'trucca-image-*'
+sudo ./install.sh
+```
+
+Script hỏi 3 thông tin rồi tự làm phần còn lại:
+
+| Câu hỏi | Ví dụ | Ghi chú |
+|---|---|---|
+| Địa chỉ Alertmanager | `http://10.0.0.5:9093` | dùng IP/hostname thật, **không** dùng `localhost` |
+| Thư mục lưu cấu hình và dữ liệu | `/opt/trucca` | tạo `config/config.yml`, `data/` (PostgreSQL + PDF), `trucca.env` |
+| Cổng web | `8080` | báo lỗi nếu cổng đang bị chương trình khác dùng |
+
+Các bước script thực hiện: kiểm tra Docker → `docker load` file image (kiểm tra SHA-256; nếu không có file và đã
+đăng nhập `gh` thì tự tải từ Release) → tạo thư mục, phân quyền UID 10001 → tạo `config.yml` và ghi
+`alertmanager.url` → tạo `trucca.env` với mật khẩu PostgreSQL ngẫu nhiên (quyền 600) → `docker compose up --wait`
+→ in địa chỉ truy cập. Đăng nhập lần đầu `admin` / `admin`, hệ thống bắt đổi mật khẩu ngay.
+
+Không hỏi (tự động hoá): `./install.sh -u http://10.0.0.5:9093 -d /opt/trucca -p 8080 -y`
+(`-i FILE` chỉ định file image, `--project NAME` đổi tên compose project, `-h` xem hướng dẫn).
+
+**Nâng cấp:** `git pull`, tải file image version mới, chạy lại `./install.sh -d /opt/trucca`. Cấu hình (có sao lưu
+`config.yml.bak.*`), mật khẩu và dữ liệu được giữ nguyên; migration DB tự chạy khi khởi động.
+
+Sau khi cài, các lệnh quản lý (script in sẵn ở cuối):
+
+```bash
+docker compose -p trucca --env-file /opt/trucca/trucca.env -f ./docker-compose.yml logs -f trucca
+docker compose -p trucca --env-file /opt/trucca/trucca.env -f ./docker-compose.yml down
+```
+
+Đóng gói image để phát hành (người build): `docker compose build && ./scripts/package-image.sh`
+→ `dist/trucca-image-<version>.tar.gz` + `.sha256`, đính kèm vào GitHub Release `v<version>`.
+
+## Triển khai thủ công
 
 1. `cp .env.example .env` và đặt:
    - `POSTGRES_PASSWORD` – chỉ dùng chữ, số, `-`, `_` (để không phải URL-encode trong `DATABASE_URL`).
@@ -119,6 +162,7 @@ docker compose exec mock-alertmanager python -c "import urllib.request as u;u.ur
 4. Nếu Alertmanager chạy ở stack compose khác: bỏ comment khối `networks` trong `docker-compose.yml`,
    đặt `name:` bằng tên network của stack đó (`docker network ls`), và dùng tên service làm URL.
 5. `docker compose up -d --wait` (không cần `--profile demo`).
+   Muốn lưu cấu hình/dữ liệu ở thư mục khác: đặt `TRUCCA_CONFIG_DIR`, `TRUCCA_DATA_DIR` trong `.env`.
 
 ### Build và đẩy image lên registry nội bộ
 

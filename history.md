@@ -7,6 +7,7 @@ Chi tiết xem `CHANGELOG.md`.
 - Cột "Thời gian bắt đầu" trên web và Excel; sắp xếp mặc định theo thời gian bắt đầu giảm dần.
 - Chuẩn hoá mức độ không phân biệt hoa thường (`severity_mapping`), migration `0003` chuẩn hoá dữ liệu lịch sử.
 - Module "Quản trị" gộp Người dùng / Hệ thống / Đổi mật khẩu; `/account` chuyển hướng tới `/admin/password`.
+- `install.sh`: cài đặt/nâng cấp một lệnh từ file image phát hành trên GitHub Release.
 - Đã gộp các thay đổi 1.0.1 bên dưới (chưa từng phát hành riêng).
 
 ## 1.0.1 – 2026-11-12 (gộp vào 2.0.0)

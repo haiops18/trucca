@@ -1,0 +1,20 @@
+[project]
+name = "trucca"
+dynamic = ["version"]
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations/script.py.mako"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "S311", "S104", "B008", "SIM105"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "E501"]
+"mock/*" = ["S"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

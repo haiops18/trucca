@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{% if user %}<meta name="csrf-token" content="{{ user.csrf_token }}">{% endif %}
+<title>{% block title %}{% endblock %} – TrucCa</title>
+<link rel="icon" href="{{ base }}/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{ base }}/static/css/app.css?v={{ version }}">
+<script src="{{ base }}/static/js/theme.js?v={{ version }}"></script>
+</head>
+<body data-base="{{ base }}">
+<a class="skip-link" href="#main">Bỏ qua tới nội dung chính</a>
+{% if user %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="{{ base }}/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>TrucCa</a>
+    <nav class="nav" aria-label="Điều hướng chính">
+      {% if not user.must_change_password %}
+      <a href="{{ base }}/" {% if active == 'alerts' %}aria-current="page"{% endif %}>Cảnh báo</a>
+      <a href="{{ base }}/reports" {% if active == 'reports' %}aria-current="page"{% endif %}>Báo cáo ca</a>
+      {% if user.is_admin %}
+      <a href="{{ base }}/admin/users" {% if active == 'users' %}aria-current="page"{% endif %}>Người dùng</a>
+      <a href="{{ base }}/admin/system" {% if active == 'system' %}aria-current="page"{% endif %}>Hệ thống</a>
+      {% endif %}
+      {% endif %}
+    </nav>
+    <div class="userbox">
+      <a class="who" href="{{ base }}/account" style="color:inherit" {% if active == 'account' %}aria-current="page"{% endif %}>{{ user.full_name or user.username }}</a>
+      <span class="role-tag">{{ 'Quản trị' if user.is_admin else 'Xem' }}</span>
+      <button type="button" class="btn-ghost-dark" id="theme-toggle" aria-label="Đổi giao diện sáng/tối">◐</button>
+      <button type="button" class="btn-ghost-dark" id="logout-btn">Đăng xuất</button>
+    </div>
+  </div>
+</header>
+{% endif %}
+<main id="main" tabindex="-1">
+{% block main %}{% endblock %}
+</main>
+<div class="toast-region" id="toasts" role="status" aria-live="polite"></div>
+<script src="{{ base }}/static/js/common.js?v={{ version }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

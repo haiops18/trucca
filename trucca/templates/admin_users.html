@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Người dùng{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="page-head">
+    <div><h1>Người dùng</h1><p>Vai trò <b>Xem</b>: xem cảnh báo, xuất Excel, tải báo cáo. <b>Quản trị</b>: thêm quản lý người dùng và hệ thống.</p></div>
+    <button class="btn btn-primary" type="button" id="new-user">Thêm người dùng</button>
+  </div>
+  <section class="panel">
+    <div class="table-wrap" style="max-height:none">
+      <table class="data">
+        <thead><tr>
+          <th scope="col">Tên đăng nhập</th><th scope="col">Họ tên</th><th scope="col">Vai trò</th>
+          <th scope="col">Trạng thái</th><th scope="col">Đăng nhập gần nhất</th><th scope="col">Thao tác</th>
+        </tr></thead>
+        <tbody id="users"><tr><td colspan="6">Đang tải…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<dialog id="user-dialog" aria-labelledby="ud-title">
+  <form method="dialog" id="user-form" novalidate>
+    <h2 id="ud-title">Thêm người dùng</h2>
+    <div class="field"><label for="u-username">Tên đăng nhập</label><input id="u-username" required maxlength="64" autocomplete="off"><span class="hint">3–64 ký tự: chữ, số, dấu chấm, gạch dưới, gạch ngang.</span></div>
+    <div class="field"><label for="u-fullname">Họ tên</label><input id="u-fullname" maxlength="200" autocomplete="off"></div>
+    <div class="field"><label for="u-role">Vai trò</label><select id="u-role"><option value="viewer">Xem</option><option value="admin">Quản trị</option></select></div>
+    <div class="field"><label for="u-password">Mật khẩu tạm</label><input id="u-password" type="password" required autocomplete="new-password"><span class="hint">Ít nhất {{ min_password_length }} ký tự, 3 trong 4 loại ký tự. Người dùng phải đổi khi đăng nhập lần đầu.</span></div>
+    <div class="form-error" id="user-error" role="alert"></div>
+    <div class="actions"><button class="btn" value="cancel" formnovalidate>Huỷ</button><button class="btn btn-primary" id="user-save" value="save">Thêm người dùng</button></div>
+  </form>
+</dialog>
+
+<dialog id="reset-dialog" aria-labelledby="rd-title">
+  <form method="dialog" id="reset-form" novalidate>
+    <h2 id="rd-title">Đặt lại mật khẩu</h2>
+    <p id="reset-who" style="margin:0;color:var(--muted)"></p>
+    <div class="field"><label for="r-password">Mật khẩu tạm mới</label><input id="r-password" type="password" required autocomplete="new-password"></div>
+    <div class="form-error" id="reset-error" role="alert"></div>
+    <div class="actions"><button class="btn" value="cancel" formnovalidate>Huỷ</button><button class="btn btn-primary" value="save">Đặt lại mật khẩu</button></div>
+  </form>
+</dialog>
+
+<dialog id="confirm-dialog" aria-labelledby="cd-title">
+  <form method="dialog">
+    <h2 id="cd-title">Xác nhận</h2>
+    <p id="confirm-text" style="margin:0"></p>
+    <div class="actions"><button class="btn" value="cancel">Huỷ</button><button class="btn btn-danger" value="ok" id="confirm-ok">Đồng ý</button></div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="{{ base }}/static/js/admin_users.js?v={{ version }}"></script>{% endblock %}

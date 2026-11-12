@@ -1,0 +1,94 @@
+# =============================================================================
+# TrucCa – file cấu hình (mount vào container tại /app/config/config.yml, read-only)
+#
+# Thứ tự ưu tiên: biến môi trường > file này > giá trị mặc định.
+#  - Mọi khoá đều ghi đè được bằng biến môi trường dạng TRUCCA__<MỤC>__<KHOÁ>,
+#    ví dụ TRUCCA__ALERTMANAGER__POLL_INTERVAL_SECONDS=15
+#  - Secret KHÔNG đặt ở đây, đặt trong .env: ALERTMANAGER_USERNAME / ALERTMANAGER_PASSWORD /
+#    ALERTMANAGER_TOKEN / POSTGRES_PASSWORD / TRUCCA_ADMIN_PASSWORD
+#
+# Sửa xong: bấm "Nạp lại cấu hình" ở trang Hệ thống, hoặc chờ tối đa 10 giây (tự phát hiện
+# file thay đổi), hoặc `docker compose restart trucca`. KHÔNG cần build lại image.
+# Riêng mục `database` và `server` cần restart container mới có hiệu lực.
+# Nếu file sai, container báo lỗi rõ ràng ra log; khi đang chạy thì giữ cấu hình cũ.
+# =============================================================================
+
+alertmanager:
+  # Địa chỉ Alertmanager (container gọi tới, không phải trình duyệt)
+  url: "http://alertmanager:9093"
+  api_version: v2               # hiện chỉ hỗ trợ v2: GET /api/v2/alerts
+  auth:
+    type: none                  # none | basic | bearer
+    # basic  -> đặt ALERTMANAGER_USERNAME, ALERTMANAGER_PASSWORD trong .env
+    # bearer -> đặt ALERTMANAGER_TOKEN trong .env
+  verify_tls: true              # false để bỏ kiểm tra chứng chỉ (không khuyến nghị)
+  ca_file: null                 # CA nội bộ trong container, vd /app/config/ca.pem
+  timeout_seconds: 10
+  poll_interval_seconds: 30     # chu kỳ gọi API lấy cảnh báo
+  # Cảnh báo phải vắng mặt bao nhiêu lần poll THÀNH CÔNG liên tiếp mới bị coi là clear.
+  # Chống clear hàng loạt khi Alertmanager vừa restart. Lỗi kết nối không bao giờ gây clear.
+  resolve_after_missing_polls: 2
+  # Nếu >= ratio số cảnh báo đang active (và >= min_alerts) cùng biến mất trong 1 lần poll
+  # (thường do Alertmanager restart, trả danh sách rỗng) thì chờ `polls` lần mới đánh dấu clear.
+  mass_clear_guard: { ratio: 0.5, min_alerts: 10, polls: 10 }
+
+# Ánh xạ label/annotation của Alertmanager -> trường hiển thị. Đổi ở đây, không sửa code.
+labels:
+  owner: owner                  # cột "Người xử lý"
+  application: application      # cột "Hệ thống" + Top hệ thống trong báo cáo
+  alertname: alertname          # cột "Tên cảnh báo"
+  severity: severity            # bộ lọc "Mức độ"
+  instance: instance            # dùng khi gộp nhóm: "(3) 10.0.0.1:9100 – 10.0.0.3:9100"
+  summary_annotation: summary   # annotation dùng làm cột "Summary"
+
+# Chỉ lấy các cảnh báo thoả mọi điều kiện dưới đây
+filters:
+  match: {}                     # label phải bằng giá trị, vd: {env: prod, team: [noc, sre]}
+  match_regex: {}               # label khớp regex (toàn chuỗi), vd: {cluster: "hn-.*"}
+  exclude_alertnames: []        # vd: [Watchdog, InfoInhibitor]
+  include_silenced: false       # true: vẫn hiển thị cảnh báo đang bị silence
+  include_inhibited: false      # true: vẫn hiển thị cảnh báo đang bị inhibit
+
+timezone: Asia/Ho_Chi_Minh
+
+# Ca trực. Ca có end <= start là ca qua đêm: kết thúc vào ngày hôm sau,
+# ngày báo cáo tính theo ngày BẮT ĐẦU ca. Tên ca: chữ, số, _ hoặc -.
+shifts:
+  - { name: CA_1, start: "08:00", end: "18:00" }
+  - { name: CA_2, start: "18:00", end: "08:00" }
+
+display:
+  refresh_seconds: 30           # tự làm mới bảng cảnh báo (người dùng đổi được trên giao diện)
+  group_same_alert: false       # mặc định gộp cảnh báo cùng alertname + application (×N)
+  missing_label_text: "(chưa gán)"
+  page_size: 50
+
+report:
+  title: "Báo cáo cuối ca"
+  handover_threshold_hours: 10  # cảnh báo tồn quá ngưỡng này đưa vào mục bàn giao
+  handover_max_items: 8         # số nhóm tối đa trong mục bàn giao (8 => báo cáo vừa 1 trang A4)
+  top_n: 5
+  trend_days: 7
+  auto_generate_at_shift_end: true   # tự chốt số liệu + sinh PDF khi hết ca
+  output_dir: /data/reports          # file: noc_shift_report_<CA>_<YYYYMMDD>.pdf
+  pdf_timeout_seconds: 60
+
+retention_days: 90              # xoá lịch sử cảnh báo, báo cáo, nhật ký cũ hơn số ngày này
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  base_path: "/"                # vd "/trucca" khi đặt sau reverse proxy theo đường dẫn con
+
+auth:
+  session_ttl_hours: 12         # phiên hết hạn sau 12 giờ không hoạt động
+  cookie_secure: false          # true khi truy cập qua HTTPS
+  max_failed_attempts: 5        # sai mật khẩu 5 lần ...
+  lockout_minutes: 15           # ... khoá 15 phút
+  min_password_length: 8
+
+database:
+  # URL lấy từ biến môi trường DATABASE_URL (docker-compose tự ghép từ .env)
+  pool_size: 5
+
+log_level: INFO                 # DEBUG | INFO | WARNING | ERROR

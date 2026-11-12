@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Tài khoản{% endblock %}
+{% block main %}
+<div class="page" style="max-width:560px">
+  <div class="page-head"><div><h1>Đổi mật khẩu</h1><p>Tài khoản <b>{{ user.username }}</b> – {{ 'Quản trị' if user.is_admin else 'Xem' }}</p></div></div>
+  {% if user.must_change_password %}
+  <div class="banner warn" role="status"><span class="dot"></span><div><strong>Bạn cần đặt mật khẩu mới</strong>Đây là lần đăng nhập đầu tiên hoặc mật khẩu vừa được đặt lại.</div></div>
+  {% endif %}
+  <section class="panel panel-pad">
+    <form id="pw-form" class="report-form" novalidate>
+      <div class="field"><label for="pw-current">Mật khẩu hiện tại</label><input id="pw-current" type="password" autocomplete="current-password" required></div>
+      <div class="field">
+        <label for="pw-new">Mật khẩu mới</label>
+        <input id="pw-new" type="password" autocomplete="new-password" required aria-describedby="pw-hint">
+        <span class="hint" id="pw-hint">Ít nhất {{ min_password_length }} ký tự, gồm 3 trong 4 loại: chữ thường, chữ hoa, chữ số, ký tự đặc biệt.</span>
+      </div>
+      <div class="field"><label for="pw-confirm">Nhập lại mật khẩu mới</label><input id="pw-confirm" type="password" autocomplete="new-password" required></div>
+      <div class="form-error" id="pw-error" role="alert"></div>
+      <div><button class="btn btn-primary" type="submit">Đổi mật khẩu</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ base }}/static/js/account.js?v={{ version }}"></script>{% endblock %}

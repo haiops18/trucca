@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Cảnh báo đang diễn ra{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="banner error" id="conn-banner" role="alert" hidden>
+    <span class="dot"></span>
+    <div><strong>Mất kết nối tới Alertmanager</strong><span id="conn-banner-text"></span></div>
+  </div>
+  <div class="banner error" id="load-banner" role="alert" hidden>
+    <span class="dot"></span>
+    <div><strong>Không tải được danh sách cảnh báo</strong><span id="load-banner-text"></span></div>
+  </div>
+
+  <section class="panel overview" aria-labelledby="ov-title">
+    <div>
+      <h1 id="ov-title" class="visually-hidden">Cảnh báo đang diễn ra</h1>
+      <div class="count" id="total-count" aria-live="polite">–</div>
+      <div class="count-label">cảnh báo đang diễn ra</div>
+      <div class="meta">
+        <span class="conn" id="conn-pill">Đang kết nối…</span>
+        <span>Cập nhật <time id="updated-at">–</time></span>
+        <span id="shift-now"></span>
+      </div>
+    </div>
+    <div class="agebar-wrap">
+      <div class="agebar-title"><b>Thời gian tồn</b><span id="age-hint">Bấm vào một nhóm để lọc</span></div>
+      <div class="agebar" id="agebar" role="group" aria-label="Lọc theo thời gian tồn"></div>
+      <div class="agelegend" id="agelegend" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:16px" aria-label="Danh sách cảnh báo">
+    <form class="toolbar" id="filters" role="search">
+      <div class="field field-q">
+        <label for="f-q">Tìm kiếm</label>
+        <input id="f-q" name="q" type="search" placeholder="Tên cảnh báo, summary, người xử lý, hệ thống, instance" maxlength="200">
+      </div>
+      <div class="field"><label for="f-application">Hệ thống</label><select id="f-application" name="application"><option value="">Tất cả</option></select></div>
+      <div class="field"><label for="f-owner">Người xử lý</label><select id="f-owner" name="owner"><option value="">Tất cả</option></select></div>
+      <div class="field"><label for="f-alertname">Tên cảnh báo</label><select id="f-alertname" name="alertname"><option value="">Tất cả</option></select></div>
+      <div class="field"><label for="f-severity">Mức độ</label><select id="f-severity" name="severity"><option value="">Tất cả</option></select></div>
+      <div class="field"><span class="label" aria-hidden="true">&nbsp;</span><button type="button" class="btn" id="clear-filters">Xoá bộ lọc</button></div>
+    </form>
+    <div class="toolbar-2">
+      <div class="left">
+        <label class="check"><input type="checkbox" id="f-group"> Gộp cảnh báo cùng tên &amp; hệ thống</label>
+        <label class="inline-field" for="refresh-sel">Tự làm mới
+          <select id="refresh-sel">
+            <option value="15">15 giây</option><option value="30">30 giây</option>
+            <option value="60">1 phút</option><option value="300">5 phút</option><option value="0">Tắt</option>
+          </select>
+        </label>
+        <div class="chips" id="chips" aria-label="Bộ lọc đang áp dụng"></div>
+      </div>
+      <div class="right">
+        <button type="button" class="btn btn-sm" id="refresh-now">Làm mới</button>
+        <a class="btn btn-primary btn-sm" id="export-btn" href="#" download>Xuất Excel</a>
+      </div>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table class="data alerts" aria-describedby="result-summary">
+        <thead>
+          <tr>
+            <th scope="col">STT</th>
+            <th scope="col" data-sort="alertname"><button type="button">Tên cảnh báo <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+            <th scope="col" data-sort="summary"><button type="button">Summary <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+            <th scope="col" data-sort="duration"><button type="button">Thời gian tồn <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+            <th scope="col" data-sort="owner"><button type="button">Người xử lý <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+            <th scope="col" data-sort="application"><button type="button">Hệ thống <span class="arrow" aria-hidden="true">▲▼</span></button></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden></div>
+    </div>
+    <div class="pager">
+      <span id="result-summary" aria-live="polite"></span>
+      <div class="pages">
+        <label class="inline-field" for="page-size">Mỗi trang
+          <select id="page-size"><option>25</option><option>50</option><option>100</option><option>200</option><option>500</option></select>
+        </label>
+        <button type="button" class="btn btn-sm" id="prev-page" aria-label="Trang trước">‹ Trước</button>
+        <span id="page-info"></span>
+        <button type="button" class="btn btn-sm" id="next-page" aria-label="Trang sau">Sau ›</button>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ base }}/static/js/alerts.js?v={{ version }}"></script>{% endblock %}

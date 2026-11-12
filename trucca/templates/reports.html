@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo cuối ca{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="page-head">
+    <div><h1>Báo cáo cuối ca</h1><p>Chọn ngày bắt đầu ca và ca trực để xem trước, tải PDF.</p></div>
+  </div>
+  <div class="report-layout">
+    <div class="stack">
+      <section class="panel panel-pad" aria-labelledby="pick-title">
+        <h2 id="pick-title" style="margin-bottom:12px">Chọn ca</h2>
+        <form class="report-form" id="report-form">
+          <div class="field">
+            <label for="r-date">Ngày bắt đầu ca</label>
+            <input type="date" id="r-date" required>
+            <span class="hint">Ca qua đêm tính theo ngày bắt đầu ca.</span>
+          </div>
+          <div class="field"><label for="r-shift">Ca trực</label><select id="r-shift" required></select></div>
+          <div class="report-actions">
+            <button class="btn btn-primary" type="submit">Xem báo cáo</button>
+            <a class="btn" id="dl-pdf" href="#">Tải PDF</a>
+            {% if user.is_admin %}<button class="btn" type="button" id="regen" title="Chốt lại số liệu và sinh lại file PDF (chỉ cho ca đã kết thúc)">Chốt lại &amp; sinh PDF</button>{% endif %}
+          </div>
+          <div class="form-error" id="report-error" role="alert"></div>
+        </form>
+      </section>
+      <section class="panel panel-pad" aria-labelledby="hist-title">
+        <h2 id="hist-title" style="margin-bottom:8px">Báo cáo đã chốt</h2>
+        <ul class="list-compact" id="history"><li>Đang tải…</li></ul>
+      </section>
+    </div>
+    <section class="panel frame-shell" aria-label="Xem trước báo cáo">
+      <iframe class="report-frame" id="report-frame" title="Xem trước báo cáo cuối ca"></iframe>
+      <div class="loading" id="frame-loading" hidden><span class="btn"><span class="spinner" aria-hidden="true"></span>Đang tạo báo cáo…</span></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ base }}/static/js/reports.js?v={{ version }}"></script>{% endblock %}

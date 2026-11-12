@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ r.title }} – {{ r.shift_name }} {{ r.report_date }}</title>
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  :root {
+    --ink: #0f172a; --ink-2: #334155; --muted: #64748b; --line: #e2e8f0;
+    --red: #b42318; --green: #067647; --blue: #1d4ed8; --orange: #c4320a; --navy: #1e3a8a;
+  }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 400; src: local("Be Vietnam Pro"), local("BeVietnamPro-Regular"), url("{{ font_base }}/BeVietnamPro-Regular.ttf"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 500; src: local("Be Vietnam Pro Medium"), local("BeVietnamPro-Medium"), url("{{ font_base }}/BeVietnamPro-Medium.ttf"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 600; src: local("Be Vietnam Pro SemiBold"), local("BeVietnamPro-SemiBold"), url("{{ font_base }}/BeVietnamPro-SemiBold.ttf"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 700; src: local("Be Vietnam Pro Bold"), local("BeVietnamPro-Bold"), url("{{ font_base }}/BeVietnamPro-Bold.ttf"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 800; src: local("Be Vietnam Pro ExtraBold"), local("BeVietnamPro-ExtraBold"), url("{{ font_base }}/BeVietnamPro-ExtraBold.ttf"); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Be Vietnam Pro", "Noto Sans", "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink); background: #ffffff; font-size: 11px; line-height: 1.35;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .sheet { background: #f2f6fb; padding: 12px 14px 12px; border-radius: 4px; }
+  header h1 { font-size: 15px; margin: 0 0 6px; font-weight: 700; }
+  header .meta { font-size: 11.5px; color: var(--ink-2); margin-bottom: 10px; }
+  header .meta span + span { margin-left: 10px; }
+  header .meta .live { color: var(--orange); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid.overview { grid-template-columns: 1.55fr 1fr; }
+  .full { grid-column: 1 / -1; }
+  .card {
+    border: 1px solid #dbe3ee; border-radius: 14px; padding: 10px 12px;
+    background: #fbfcfe; break-inside: avoid; page-break-inside: avoid;
+  }
+  .card h2 { font-size: 12.5px; margin: 0 0 8px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .card h2 small { font-size: 9.5px; color: var(--muted); font-weight: 500; }
+  .card h2 .sq { width: 9px; height: 9px; background: #1f2937; border-radius: 1px; display: inline-block; }
+  .sub { display: flex; justify-content: space-between; font-size: 9.5px; margin-bottom: 6px; }
+  .sub b { font-weight: 700; } .sub span { color: var(--muted); }
+
+  /* Tổng quan ca */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 11px 12px; }
+  .stat .lbl { font-size: 8.5px; font-weight: 700; letter-spacing: .08em; color: #475569; text-transform: uppercase; }
+  .stat .val { font-size: 24px; font-weight: 800; margin: 6px 0 4px; line-height: 1; }
+  .stat .desc { font-size: 9px; color: var(--muted); }
+  .val.red { color: var(--red); } .val.green { color: var(--green); } .val.navy { color: var(--navy); }
+
+  /* So với hôm qua */
+  .cmp { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 9px; }
+  .cmp + .cmp { margin-top: 8px; }
+  .cmp .num { font-size: 15px; font-weight: 800; }
+  .cmp .row { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin: 2px 0 6px; }
+  .cmp .up { color: var(--red); } .cmp .down { color: var(--green); } .cmp .flat { color: var(--muted); }
+  .track { height: 5px; background: #e9eef5; border-radius: 99px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 99px; }
+  .fill.up { background: #f09aa7; } .fill.down { background: #86d3a8; } .fill.flat { background: #b6c2d2; }
+
+  /* Bàn giao */
+  .handover { background: linear-gradient(180deg, #fffdfb 0%, #fff3ef 100%); border-color: #f5d0c5; }
+  table.list { width: 100%; border-collapse: collapse; }
+  table.list td { padding: 3.5px 4px; border-top: 1px solid #eef1f5; vertical-align: top; }
+  table.list tr:first-child td { border-top: 0; }
+  table.list .app { font-weight: 700; width: 34%; word-break: break-word; }
+  table.list .x { color: var(--red); font-size: 9px; font-weight: 700; margin-left: 3px; }
+  table.list .sum { color: #475569; word-break: break-word; }
+  table.list .dur { color: var(--orange); font-weight: 800; text-align: right; white-space: nowrap; width: 58px; }
+  .more { font-size: 9px; color: var(--muted); margin-top: 6px; }
+  .empty { font-size: 9.5px; color: var(--muted); padding: 2px 0; }
+
+  /* Top N */
+  .top-apps { background: linear-gradient(180deg, #fbfdff 0%, #f1f6fd 100%); }
+  .top-types { background: linear-gradient(180deg, #fffefb 0%, #fdf6ec 100%); }
+  .rank-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 5px 9px; }
+  .rank-item + .rank-item { margin-top: 5px; }
+  .badge { width: 20px; height: 20px; border-radius: 6px; color: #fff; font-size: 8.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; }
+  .top-apps .badge { background: #2563eb; } .top-types .badge { background: #c4320a; }
+  .rank-item .name { font-size: 9.5px; font-weight: 700; word-break: break-word; }
+  .rank-item .ratio { font-size: 8.5px; color: var(--muted); margin: 0 0 3px; }
+  .top-apps .fill { background: linear-gradient(90deg, #0f766e, #60a5fa); }
+  .top-types .fill { background: linear-gradient(90deg, #ea580c, #facc15); }
+  .rank-item .right { text-align: right; min-width: 38px; }
+  .rank-item .cnt { font-size: 13px; font-weight: 800; }
+  .rank-item .pct { font-size: 8.5px; color: var(--muted); }
+
+  /* Xu thế */
+  .trend { background: linear-gradient(180deg, #fffefa 0%, #fdfaee 100%); }
+  .legend { display: flex; align-items: center; gap: 6px; font-size: 9px; color: #475569;
+    border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }
+  .legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--red); display: inline-block; }
+  footer { margin-top: 6px; font-size: 8.5px; color: var(--muted); text-align: right; }
+
+  @media screen and (max-width: 720px) {
+    .grid, .grid.overview { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .sheet { padding: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <h1>{{ r.title }}</h1>
+    <div class="meta">
+      <span>{{ r.report_date }}</span>
+      <span>{{ r.shift_name }} ({{ r.shift_label }})</span>
+      <span>{{ r.period_label }}</span>
+      {% if not r.finished %}<span class="live">• Ca đang diễn ra – số liệu tạm tính</span>{% endif %}
+    </div>
+  </header>
+
+  <section class="grid overview">
+    <div class="card">
+      <h2>{{ r.shift_name }} • {{ r.shift_label }}</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="lbl">Phát sinh</div>
+          <div class="val red">{{ r.totals.new }}</div>
+          <div class="desc">Tổng cảnh báo phát sinh trong ca</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Đã clear</div>
+          <div class="val green">{{ r.totals.cleared }}</div>
+          <div class="desc">Số cảnh báo đã xử lý dứt điểm</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Tồn sang ca sau</div>
+          <div class="val navy">{{ r.totals.carried_over if r.totals.carried_over is not none else '--' }}</div>
+          <div class="desc">{% if r.totals.carried_over is none %}Chỉ chốt khi ca trực kết thúc{% else %}Còn active khi kết thúc ca{% endif %}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>So với cùng ca hôm qua</h2>
+      {% set c = r.compare.new %}
+      <div class="cmp">
+        <div class="num" style="color: var(--red)">{{ c.value }}</div>
+        <div class="row">
+          <span>Phát sinh trong ca đã chọn</span>
+          <span class="{{ c.trend }}">{% if c.delta > 0 %}+{% endif %}{{ c.delta }} vs hôm qua</span>
+        </div>
+        <div class="track"><div class="fill {{ c.trend }}" style="width: {{ c.bar_pct }}%"></div></div>
+      </div>
+      {% set c = r.compare.carried_over %}
+      <div class="cmp">
+        <div class="num" style="color: var(--navy)">{{ c.value if c.value is not none else '--' }}</div>
+        <div class="row">
+          <span>Tồn sang ca sau</span>
+          {% if c.value is none %}<span>Chỉ chốt khi ca kết thúc</span>
+          {% else %}<span class="{{ c.trend }}">{% if c.delta > 0 %}+{% endif %}{{ c.delta }} vs hôm qua</span>{% endif %}
+        </div>
+        <div class="track"><div class="fill {{ c.trend }}" style="width: {{ c.bar_pct }}%"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid" style="margin-top: 10px">
+    <div class="card handover full">
+      <h2><span class="sq"></span>Cảnh báo tồn cần bàn giao <small>(active &gt; {{ r.handover_threshold_hours | round(1) | string | replace('.0', '') }} giờ)</small></h2>
+      {% if r.handover %}
+      <table class="list">
+        {% for h in r.handover %}
+        <tr>
+          <td class="app">{{ h.application }}{% if h.count > 1 %}<span class="x">×{{ h.count }}</span>{% endif %}</td>
+          <td class="sum">{{ h.summary }}</td>
+          <td class="dur">{{ h.duration }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% if r.handover_more %}<div class="more">+{{ r.handover_more }} nhóm cảnh báo khác (xem chi tiết trên giao diện TrucCa)</div>{% endif %}
+      {% else %}
+      <div class="empty">Không có cảnh báo tồn quá ngưỡng.</div>
+      {% endif %}
+    </div>
+
+    {% for block in [
+        {'cls': 'top-apps', 'title': 'Hệ thống nổi bật', 'sub': 'Phát sinh nhiều nhất', 'hint': 'Tỷ trọng trên tổng phát sinh', 'items': r.top_applications},
+        {'cls': 'top-types', 'title': 'Loại cảnh báo nổi bật', 'sub': 'Loại phát sinh nhiều nhất', 'hint': 'Nhìn ra pattern lỗi lặp', 'items': r.top_alertnames}] %}
+    <div class="card {{ block.cls }}">
+      <h2>{{ block.title }}</h2>
+      <div class="sub"><b>{{ block.sub }}</b><span>{{ block.hint }}</span></div>
+      {% for t in block['items'] %}
+      <div class="rank-item">
+        <div class="badge">#{{ t.rank }}</div>
+        <div>
+          <div class="name">{{ t.name }}</div>
+          <div class="ratio">{{ t.count }}/{{ t.total }}</div>
+          <div class="track"><div class="fill" style="width: {{ t.bar_pct }}%"></div></div>
+        </div>
+        <div class="right"><div class="cnt">{{ t.count }}</div><div class="pct">{{ t.pct }}%</div></div>
+      </div>
+      {% else %}
+      <div class="empty">Không có cảnh báo phát sinh trong ca.</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+
+    <div class="card trend full">
+      <h2>Xu thế phát sinh {{ r.trend | length }} ngày</h2>
+      {{ trend_svg(r.trend) }}
+      <div class="legend"><i></i>Phát sinh theo ngày</div>
+    </div>
+  </section>
+
+  <footer>TrucCa • Sinh lúc {{ r.generated_at_label }}{% if r.from_snapshot %} • Số liệu đã chốt khi hết ca{% endif %}</footer>
+</div>
+</body>
+</html>

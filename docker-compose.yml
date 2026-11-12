@@ -1,0 +1,72 @@
+name: trucca
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trucca}
+      POSTGRES_USER: ${POSTGRES_USER:-trucca}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Dat POSTGRES_PASSWORD trong .env}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1: kiểm tra qua TCP để không báo healthy sớm khi Postgres đang khởi tạo lần đầu
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+    # Không mở cổng Postgres ra ngoài; chỉ TrucCa truy cập qua network nội bộ.
+
+  trucca:
+    image: ${TRUCCA_IMAGE:-registry.local/noc/trucca}:${TRUCCA_VERSION:-latest}
+    build:
+      context: .
+      args:
+        APP_VERSION: ${TRUCCA_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${TRUCCA_PORT:-8080}:8080"
+    env_file: .env
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trucca}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trucca}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/trucca:/data          # báo cáo PDF tại /data/reports; trên host: chown 10001:10001
+    logging: *logging
+    # Gọi Alertmanager ở compose/network khác: join chung network đó
+    # (bỏ comment cả khối "networks" ở cuối file).
+    # networks:
+    #   - default
+    #   - monitoring
+
+  # Mock Alertmanager để demo/test:  docker compose --profile demo up -d
+  # và đặt alertmanager.url: "http://mock-alertmanager:9093" trong config/config.yml
+  mock-alertmanager:
+    profiles: ["demo"]
+    image: ${TRUCCA_IMAGE:-registry.local/noc/trucca}:${TRUCCA_VERSION:-latest}
+    command: ["python", "-m", "mock.mock_alertmanager"]
+    environment:
+      MOCK_ALERTS: "180"
+      MOCK_CHURN_SECONDS: "30"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:9093/-/healthy')"]
+      interval: 15s
+    logging: *logging
+
+# networks:
+#   monitoring:
+#     external: true
+#     name: monitoring_default     # tên network của stack Prometheus/Alertmanager (docker network ls)

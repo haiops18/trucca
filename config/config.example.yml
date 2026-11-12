@@ -41,6 +41,14 @@ labels:
   instance: instance            # dùng khi gộp nhóm: "(3) 10.0.0.1:9100 – 10.0.0.3:9100"
   summary_annotation: summary   # annotation dùng làm cột "Summary"
 
+# Nhóm mức độ (bộ lọc "Mức độ", badge màu, số đếm, Excel). So khớp KHÔNG phân biệt hoa thường và bỏ khoảng
+# trắng hai đầu: Warning / WARNING / " warning " đều thuộc nhóm warning. Giá trị không thuộc nhóm nào => "Khác".
+# Chỉ có 2 nhóm: critical, warning. Sửa xong chỉ cần nạp lại cấu hình (không cần build lại image);
+# dữ liệu lịch sử trong DB được chuẩn hoá lại theo mapping mới.
+severity_mapping:
+  critical: [critical]
+  warning: [warning]
+
 # Chỉ lấy các cảnh báo thoả mọi điều kiện dưới đây
 filters:
   match: {}                     # label phải bằng giá trị, vd: {env: prod, team: [noc, sre]}

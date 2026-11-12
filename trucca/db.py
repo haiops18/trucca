@@ -43,7 +43,8 @@ alerts = Table(
     Column("fingerprint", String(64), primary_key=True),
     Column("alertname", Text, nullable=False),
     Column("summary", Text, nullable=False, server_default=""),
-    Column("severity", Text),
+    Column("severity", Text),  # giá trị gốc từ label (không đổi hoa/thường)
+    Column("severity_normalized", String(16), nullable=False, server_default="other"),  # critical|warning|other
     Column("owner", Text),
     Column("application", Text),
     Column("instance", Text),
@@ -61,6 +62,7 @@ alerts = Table(
     CheckConstraint("status IN ('active','resolved')", name="ck_alerts_status"),
 )
 Index("ix_alerts_status_starts", alerts.c.status, alerts.c.starts_at)
+Index("ix_alerts_severity_norm", alerts.c.severity_normalized)
 
 # Mỗi lần "phát sinh" = 1 dòng. Báo cáo ca tính trên bảng này.
 occurrences = Table(
@@ -70,7 +72,8 @@ occurrences = Table(
     Column("fingerprint", String(64), nullable=False),
     Column("alertname", Text, nullable=False),
     Column("summary", Text, nullable=False, server_default=""),
-    Column("severity", Text),
+    Column("severity", Text),  # giá trị gốc từ label (không đổi hoa/thường)
+    Column("severity_normalized", String(16), nullable=False, server_default="other"),  # critical|warning|other
     Column("owner", Text),
     Column("application", Text),
     Column("instance", Text),

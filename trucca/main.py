@@ -31,6 +31,7 @@ from .db import alerts, audit_log, init_engine, occurrences, run_migrations, shi
 from .logging_setup import setup_logging
 from .reports.render import ReportRenderer
 from .reports.service import finalize_due_shifts
+from .severity import renormalize
 from .timeutil import utcnow
 from .web import api, pages
 from .web.deps import SESSION_COOKIE, PageRedirect, set_session_cookie
@@ -125,6 +126,12 @@ def on_config_change(st: AppState) -> Any:
         if old.alertmanager.poll_interval_seconds != new.alertmanager.poll_interval_seconds:
             st.scheduler.reschedule_job("poll", trigger="interval", seconds=new.alertmanager.poll_interval_seconds)
         st.renderer.pdf_timeout_ms = new.report.pdf_timeout_seconds * 1000
+        if old.severity_mapping != new.severity_mapping:
+            try:
+                n = renormalize(st.engine, new.severity_mapping)
+                log.info("severity_renormalized", extra={"rows": n})
+            except Exception:
+                log.exception("severity_renormalize_failed")
         for key in ("database", "server"):
             if getattr(old, key) != getattr(new, key):
                 log.warning("config_change_requires_restart", extra={"section": key})
@@ -170,6 +177,9 @@ def build_state(cfgm: ConfigManager) -> AppState:
     engine = init_engine(db_url, cfg.database.pool_size)
     wait_for_db(engine)
     run_migrations(db_url)
+    changed = renormalize(engine, cfg.severity_mapping)
+    if changed:
+        log.info("severity_renormalized", extra={"rows": changed})
     auth.ensure_bootstrap_admin(engine, os.environ.get("TRUCCA_ADMIN_USERNAME"),
                                 os.environ.get("TRUCCA_ADMIN_PASSWORD"))
     check_output_dir(cfg.report.output_dir)

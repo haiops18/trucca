@@ -28,6 +28,7 @@ from sqlalchemy.engine import Engine
 from . import __version__
 from .config import AppConfig, FiltersConfig, LabelsConfig
 from .db import alerts, occurrences
+from .severity import SeverityMapping, normalize_severity
 from .timeutil import parse_am_time, utcnow
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ class FetchedAlert:
     starts_at: datetime
     ends_at: datetime | None
     am_state: str | None
+    severity_normalized: str = "other"  # critical | warning | other (xem severity.py)
 
 
 def _blank_to_none(v: Any) -> str | None:
@@ -111,7 +113,8 @@ def _blank_to_none(v: Any) -> str | None:
     return s or None
 
 
-def normalize_alert(raw: dict[str, Any], labels_cfg: LabelsConfig) -> FetchedAlert | None:
+def normalize_alert(raw: dict[str, Any], labels_cfg: LabelsConfig,
+                    severity_mapping: SeverityMapping | None = None) -> FetchedAlert | None:
     fp = raw.get("fingerprint")
     labels = raw.get("labels") or {}
     annotations = raw.get("annotations") or {}
@@ -126,11 +129,13 @@ def normalize_alert(raw: dict[str, Any], labels_cfg: LabelsConfig) -> FetchedAle
     annotations = {str(k): str(v) for k, v in annotations.items()} if isinstance(annotations, dict) else {}
     alertname = labels.get(labels_cfg.alertname) or "(không tên)"
     status = raw.get("status") or {}
+    severity = _blank_to_none(labels.get(labels_cfg.severity))
     return FetchedAlert(
         fingerprint=str(fp)[:64],
         alertname=alertname,
         summary=annotations.get(labels_cfg.summary_annotation, "") or "",
-        severity=_blank_to_none(labels.get(labels_cfg.severity)),
+        severity=severity,
+        severity_normalized=normalize_severity(severity, severity_mapping),
         owner=_blank_to_none(labels.get(labels_cfg.owner)),
         application=_blank_to_none(labels.get(labels_cfg.application)),
         instance=_blank_to_none(labels.get(labels_cfg.instance)),
@@ -304,6 +309,7 @@ def _alert_values(a: FetchedAlert) -> dict[str, Any]:
         "alertname": a.alertname,
         "summary": a.summary,
         "severity": a.severity,
+        "severity_normalized": a.severity_normalized,
         "owner": a.owner,
         "application": a.application,
         "instance": a.instance,
@@ -396,6 +402,7 @@ def apply_plan(engine: Engine, plan: Plan, now: datetime) -> None:
             conn.execute(
                 update(alerts).where(alerts.c.fingerprint == bindparam("fp")).values(
                     alertname=bindparam("alertname"), summary=bindparam("summary"), severity=bindparam("severity"),
+                    severity_normalized=bindparam("severity_normalized"),
                     owner=bindparam("owner"), application=bindparam("application"), instance=bindparam("instance"),
                     labels=bindparam("labels"), annotations=bindparam("annotations"), am_state=bindparam("am_state"),
                 ),
@@ -409,6 +416,7 @@ def apply_plan(engine: Engine, plan: Plan, now: datetime) -> None:
                        .where(alerts.c.fingerprint == bindparam("fp")).scalar_subquery())
                 .values(
                     alertname=bindparam("alertname"), summary=bindparam("summary"), severity=bindparam("severity"),
+                    severity_normalized=bindparam("severity_normalized"),
                     owner=bindparam("owner"), application=bindparam("application"), instance=bindparam("instance"),
                     labels=bindparam("labels"),
                 ),
@@ -517,7 +525,7 @@ class Collector:
             if not isinstance(item, dict):
                 invalid += 1
                 continue
-            a = normalize_alert(item, self.cfg.labels)
+            a = normalize_alert(item, self.cfg.labels, self.cfg.severity_mapping)
             if a is None:
                 invalid += 1
                 if item.get("fingerprint"):

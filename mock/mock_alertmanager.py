@@ -45,6 +45,8 @@ def make_alert(started: datetime) -> dict[str, Any]:
     app = rng.choice(APPLICATIONS)
     port = rng.choice([9100, 9104, 9182, 8080])
     inst = f"10.{rng.randint(200, 230)}.{rng.randint(1, 250)}.{rng.randint(2, 250)}:{port}"
+    # Alertmanager thật hay có severity viết hoa/thường lẫn lộn -> mock cũng vậy để test chuẩn hoá mức độ
+    severity = rng.choice([severity, severity.capitalize(), severity.upper(), f" {severity} "])
     labels = {"alertname": name, "application": app, "severity": severity, "instance": inst, "job": "node"}
     owner = rng.choice(OWNERS)
     if owner:

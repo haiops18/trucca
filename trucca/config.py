@@ -191,9 +191,16 @@ class DatabaseConfig(_Base):
         return SecretStr(raw)
 
 
+SEVERITY_GROUPS = ("critical", "warning")
+
+
 class AppConfig(_Base):
     alertmanager: AlertmanagerConfig = AlertmanagerConfig()
     labels: LabelsConfig = LabelsConfig()
+    # Nhóm mức độ -> các giá trị label severity (so khớp không phân biệt hoa thường, bỏ khoảng trắng).
+    # Giá trị không thuộc nhóm nào => "other" (hiển thị "Khác").
+    severity_mapping: dict[str, list[str]] = Field(
+        default_factory=lambda: {"critical": ["critical"], "warning": ["warning"]})
     filters: FiltersConfig = FiltersConfig()
     timezone: str = "Asia/Ho_Chi_Minh"
     shifts: list[ShiftConfig] = Field(
@@ -219,6 +226,28 @@ class AppConfig(_Base):
         except (ZoneInfoNotFoundError, ValueError) as e:
             raise ValueError(f"timezone không hợp lệ: {v}") from e
         return v
+
+    @field_validator("severity_mapping")
+    @classmethod
+    def _severity_mapping(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
+        unknown = sorted(set(v) - set(SEVERITY_GROUPS))
+        if unknown:
+            raise ValueError(f"nhóm mức độ không hợp lệ: {', '.join(unknown)} (chỉ dùng: critical, warning)")
+        out: dict[str, list[str]] = {}
+        owner: dict[str, str] = {}
+        for group in SEVERITY_GROUPS:
+            values = []
+            for raw in v.get(group, []):
+                key = str(raw).strip().casefold()
+                if not key:
+                    raise ValueError(f"severity_mapping.{group} có giá trị rỗng")
+                if key in owner and owner[key] != group:
+                    raise ValueError(f"giá trị '{raw}' nằm ở cả nhóm {owner[key]} và {group}")
+                owner[key] = group
+                if key not in values:
+                    values.append(key)
+            out[group] = values
+        return out
 
     @field_validator("shifts")
     @classmethod

@@ -223,7 +223,7 @@ ensure_image() {  # ensure_image IMAGE:TAG TÊN_FILE CHO_PHÉP_PULL(0/1)
 
 PG_IMAGE="$(awk '/^  postgres:/{f=1} f && /^    image:/{print $2; exit}' "$COMPOSE_FILE")"
 [[ -n "$PG_IMAGE" ]] || die "không đọc được image PostgreSQL trong docker-compose.yml"
-PG_FILE="$(printf '%s' "$PG_IMAGE" | tr ':/' '--').tar.gz"     # postgres:16.4-alpine -> postgres-16.4-alpine.tar.gz
+PG_FILE="$(printf '%s' "$PG_IMAGE" | tr ':/' '--').tar.gz"     # postgres:16.16-alpine -> postgres-16.16-alpine.tar.gz
 
 info "Nạp image"
 if [[ -n "$IMAGE_FILE" ]]; then

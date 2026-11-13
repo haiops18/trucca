@@ -6,11 +6,20 @@ import base64
 import hashlib
 import hmac
 import secrets
+import threading
 
 # Tham số scrypt: N=2^15, r=8, p=1 (~32 MiB RAM, ~50-100ms) - khuyến nghị OWASP
 _N, _R, _P = 2**15, 8, 1
 _MAXMEM = 64 * 1024 * 1024
 _DKLEN = 32
+# Mỗi lần băm tốn ~32 MiB RAM + CPU. Giới hạn số lần băm chạy đồng thời để một loạt request
+# đăng nhập (kể cả chưa xác thực) không làm cạn RAM/CPU của container; request vượt quá sẽ chờ lượt.
+_SCRYPT_SLOTS = threading.BoundedSemaphore(4)
+
+
+def _scrypt(password: str, salt: bytes, n: int, r: int, p: int, dklen: int) -> bytes:
+    with _SCRYPT_SLOTS:
+        return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=_MAXMEM, dklen=dklen)
 
 
 def _b64(b: bytes) -> str:
@@ -19,7 +28,7 @@ def _b64(b: bytes) -> str:
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=_N, r=_R, p=_P, maxmem=_MAXMEM, dklen=_DKLEN)
+    dk = _scrypt(password, salt, _N, _R, _P, _DKLEN)
     return f"scrypt${_N}${_R}${_P}${_b64(salt)}${_b64(dk)}"
 
 
@@ -30,9 +39,7 @@ def verify_password(password: str, stored: str) -> bool:
             return False
         salt = base64.b64decode(salt_b64)
         expected = base64.b64decode(dk_b64)
-        dk = hashlib.scrypt(
-            password.encode("utf-8"), salt=salt, n=int(n), r=int(r), p=int(p), maxmem=_MAXMEM, dklen=len(expected)
-        )
+        dk = _scrypt(password, salt, int(n), int(r), int(p), len(expected))
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(dk, expected)

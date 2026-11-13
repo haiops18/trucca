@@ -3,6 +3,20 @@
 Định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/), phiên bản theo [SemVer](https://semver.org/).
 Ghi chú vận hành chi tiết hơn ở `history.md`.
 
+## [2.1.1] – 2026-11-13
+
+### Security
+- Nâng `starlette` 0.41.3 → 1.10.0 (qua `fastapi` 0.115.6 → 0.162.5): sửa CVE-2025-62727 (header `Range` khiến
+  CPU tăng bậc hai khi tải file tĩnh/PDF – DoS không cần đăng nhập), CVE-2025-54121, CVE-2026-48710,
+  CVE-2026-54282, CVE-2026-54283 và các lỗi khác của Starlette.
+- Nâng `Jinja2` 3.1.5 → 3.1.6 (CVE-2025-27516; TrucCa không dùng sandbox nên không bị ảnh hưởng trực tiếp).
+- Giới hạn tối đa 4 lần băm mật khẩu (scrypt, ~32 MiB/lần) chạy đồng thời, để một loạt request đăng nhập không làm
+  cạn RAM/CPU của container.
+- Image PostgreSQL `16.4-alpine` → `16.16-alpine` (bản vá bảo mật cùng dòng 16, không cần chuyển đổi dữ liệu).
+
+### Migration notes
+- Không có thay đổi DB. Đổi image PostgreSQL chỉ khởi động lại container `postgres`, dữ liệu giữ nguyên.
+
 ## [2.1.0] – 2026-11-12
 
 ### Added

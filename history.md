@@ -1,5 +1,10 @@
 # Lịch sử thay đổi
 
+## 2.1.1 – 2026-11-13
+
+- Bản vá bảo mật: nâng FastAPI/Starlette (CVE DoS qua header Range trên file tĩnh/PDF, không cần đăng nhập), Jinja2,
+  PostgreSQL 16.4 → 16.16; giới hạn số lần băm mật khẩu đồng thời. Không đổi DB, không đổi cấu hình.
+
 ## 2.1.0 – 2026-11-12
 
 - Tra cứu cảnh báo cũ: chọn thời điểm trên trang cảnh báo để xem các cảnh báo đang diễn ra lúc đó kèm trạng thái

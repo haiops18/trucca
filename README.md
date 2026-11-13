@@ -119,7 +119,7 @@ sudo ./install.sh
 ```
 
 Script tự tải 2 image từ GitHub Release `v<version>`: `trucca-image-<version>.tar.gz` và
-`postgres-16.4-alpine.tar.gz` (kèm `.sha256`). **Máy không có internet:** tải trước 4 file đó ở trang
+`postgres-16.16-alpine.tar.gz` (kèm `.sha256`). **Máy không có internet:** tải trước 4 file đó ở trang
 [Releases](https://github.com/haiops18/trucca/releases), chép vào thư mục repo (cạnh `install.sh`) rồi chạy script.
 
 Script hỏi 3 thông tin rồi tự làm phần còn lại:
@@ -352,6 +352,8 @@ Menu **Quản trị** (`/admin`) gộp 3 mục:
 - Admin đầu tiên tạo khi DB chưa có người dùng (mặc định `admin` / `admin`, hoặc theo `.env`); lần đăng nhập đầu **bắt buộc đổi mật khẩu**.
 - Người dùng mới / bị đặt lại mật khẩu cũng phải đổi mật khẩu ở lần đăng nhập kế tiếp.
 - Mật khẩu: tối thiểu `min_password_length` ký tự, 3 trong 4 loại (thường, hoa, số, ký tự đặc biệt), băm scrypt.
+- Tối đa 4 lần băm mật khẩu chạy cùng lúc (mỗi lần ~32 MiB RAM); request đăng nhập dồn dập sẽ phải chờ lượt
+  thay vì làm cạn RAM/CPU của container.
 - Sai mật khẩu `max_failed_attempts` lần → khoá `lockout_minutes` phút (admin có thể mở khoá).
 - Luôn phải còn ít nhất 1 admin đang hoạt động; không tự xoá được tài khoản của mình.
 - Đổi vai trò / vô hiệu hoá / đặt lại mật khẩu → các phiên của người đó bị đăng xuất ngay.
@@ -469,7 +471,7 @@ Không đặt `TRUCCA_TEST_DATABASE_URL` thì các test này được bỏ qua v
 
 ```bash
 docker run -d --rm --name trucca-test-pg -e POSTGRES_USER=trucca_test -e POSTGRES_PASSWORD=<mật-khẩu> \
-  -p 127.0.0.1:55432:5432 postgres:16.4-alpine
+  -p 127.0.0.1:55432:5432 postgres:16.16-alpine
 export TRUCCA_TEST_DATABASE_URL=postgresql+psycopg://trucca_test:<mật-khẩu>@127.0.0.1:55432/postgres
 pytest -q                    # unit + tích hợp
 docker stop trucca-test-pg
@@ -478,6 +480,9 @@ docker stop trucca-test-pg
 ### Quy trình phát hành
 
 1. `ruff check .` và `pytest -q` (có `TRUCCA_TEST_DATABASE_URL`) – tất cả phải pass.
+   Quét CVE thư viện trong image (cần `pip install pip-audit`):
+   `docker run --rm -i --entrypoint python registry.local/noc/trucca:$TRUCCA_VERSION - < scripts/freeze.py > /tmp/freeze.txt && pip-audit -r /tmp/freeze.txt --disable-pip --no-deps`
+   – phải ra `No known vulnerabilities found`.
 2. Thử end-to-end: `docker compose --profile demo up -d --wait` với mock (đặt `alertmanager.url` tới mock),
    kiểm tra trang cảnh báo, Excel, lọc mức độ, module Quản trị, sinh báo cáo ca.
 3. Tăng `TRUCCA_VERSION` trong `.env` (semver), `docker compose build`, gắn thêm tag `latest`:
